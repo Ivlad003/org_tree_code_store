@@ -65,7 +65,28 @@ async function loadData() {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         const csv = await response.text();
-        return parseCSV(csv);
+        const data = parseCSV(csv);
+
+        // Filter out empty/invalid rows and fix common data issues
+        return data.filter(row => {
+            // Skip rows without id (empty rows)
+            if (!row.id || row.id.trim() === '') return false;
+            return true;
+        }).map(row => {
+            // Fix name parsing issues (comma in first_name like "Zenyk, Haiduk")
+            if (row.first_name && row.first_name.includes(',')) {
+                const parts = row.first_name.split(',').map(s => s.trim());
+                row.first_name = parts[0];
+                if (!row.last_name && parts[1]) {
+                    row.last_name = parts[1];
+                }
+            }
+            // Fix QA category node mislabeled as BDR (id=8)
+            if (row.id === '8' && row.first_name === 'QA' && row.department_name === 'BDR') {
+                row.department_name = 'QA';
+            }
+            return row;
+        });
     } catch (error) {
         console.error('Failed to load data:', error);
         return [];
