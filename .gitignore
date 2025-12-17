@@ -1,0 +1,15 @@
+# MCP configuration (contains local settings)
+.mcp.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node modules (if added later)
+node_modules/
