@@ -232,3 +232,18 @@ body {
 .link {
     stroke: #E4E2E9 !important;
 }
+
+/* Loading and error states */
+.loading,
+.error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 16px;
+    color: #716E7B;
+}
+
+.error {
+    color: #dc3545;
+}

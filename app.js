@@ -1,7 +1,25 @@
 // Configuration
 const DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKqR9KxEHV1Lr2acNGfHxU0qO3CPWwfxaTdp9BD_n6T3X48n-MxCL65ocaTn180TQfO9x5OkjJwPYN/pub?output=csv';
 
-// Parse CSV to array of objects
+// Security: Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Security: Validate URL protocol
+function isValidUrl(string) {
+    if (!string) return false;
+    try {
+        const url = new URL(string);
+        return url.protocol === 'https:' || url.protocol === 'http:';
+    } catch {
+        return false;
+    }
+}
+
+// Parse CSV to array of objects (RFC 4180 compliant with escaped quotes)
 function parseCSV(csv) {
     const lines = csv.trim().split('\n');
     const headers = lines[0].split(',').map(h => h.trim());
@@ -10,22 +28,30 @@ function parseCSV(csv) {
         const values = [];
         let current = '';
         let inQuotes = false;
+        let i = 0;
 
-        for (let char of line) {
+        while (i < line.length) {
+            const char = line[i];
             if (char === '"') {
-                inQuotes = !inQuotes;
+                if (inQuotes && line[i + 1] === '"') {
+                    current += '"';  // Escaped quote
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
             } else if (char === ',' && !inQuotes) {
                 values.push(current.trim());
                 current = '';
             } else {
                 current += char;
             }
+            i++;
         }
         values.push(current.trim());
 
         const obj = {};
-        headers.forEach((header, i) => {
-            obj[header] = values[i] || '';
+        headers.forEach((header, idx) => {
+            obj[header] = values[idx] || '';
         });
         return obj;
     });
@@ -35,6 +61,9 @@ function parseCSV(csv) {
 async function loadData() {
     try {
         const response = await fetch(DATA_URL);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
         const csv = await response.text();
         return parseCSV(csv);
     } catch (error) {
@@ -57,15 +86,78 @@ const linkedinSVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="curre
 
 let chart;
 
+// Modal elements (initialized after DOM ready)
+let modalBackdrop, modalImg, modalName, modalDepartment, modalDescription, modalLinkedin, modalClose;
+
+// Initialize modal elements and event listeners
+function initModal() {
+    modalBackdrop = document.getElementById('modal-backdrop');
+    modalImg = document.getElementById('modal-img');
+    modalName = document.getElementById('modal-name');
+    modalDepartment = document.getElementById('modal-department');
+    modalDescription = document.getElementById('modal-description');
+    modalLinkedin = document.getElementById('modal-linkedin');
+    modalClose = document.getElementById('modal-close');
+
+    modalClose.addEventListener('click', closeModal);
+
+    modalBackdrop.addEventListener('click', (e) => {
+        if (e.target === modalBackdrop) {
+            closeModal();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) {
+            closeModal();
+        }
+    });
+}
+
+// Open modal with person data
+function openModal(person) {
+    const fullName = [person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown';
+
+    modalName.textContent = fullName;
+    modalDepartment.textContent = person.department_name || '';
+    modalDescription.textContent = person.description || '';
+
+    if (person.img_url && isValidUrl(person.img_url)) {
+        modalImg.src = person.img_url;
+        modalImg.alt = fullName;
+        modalImg.style.display = 'block';
+    } else {
+        modalImg.style.display = 'none';
+    }
+
+    if (isValidUrl(person.linkedin_url)) {
+        modalLinkedin.href = person.linkedin_url;
+        modalLinkedin.classList.remove('hidden');
+    } else {
+        modalLinkedin.classList.add('hidden');
+    }
+
+    modalBackdrop.classList.remove('hidden');
+}
+
+// Close modal
+function closeModal() {
+    modalBackdrop.classList.add('hidden');
+}
+
 // Initialize app
 async function init() {
+    const container = document.getElementById('chart-container');
+    container.innerHTML = '<div class="loading">Loading organization chart...</div>';
+
     const data = await loadData();
-    console.log('Loaded data:', data);
 
     if (data.length === 0) {
-        console.error('No data loaded');
+        container.innerHTML = '<div class="error">Failed to load organization data. Please refresh the page.</div>';
         return;
     }
+
+    container.innerHTML = '';
 
     // Initialize chart
     chart = new d3.OrgChart()
@@ -82,24 +174,25 @@ async function init() {
         .rootMargin(40)
         .duration(400)
         .setActiveNodeCentered(true)
-        .nodeContent((d) => {
-            const data = d.data;
-            const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ') || 'Unknown';
-            const department = data.department_name || '';
-            const imgUrl = data.img_url || '';
-            const linkedinUrl = data.linkedin_url || '';
+        .nodeContent((node) => {
+            const person = node.data;
+            const fullName = escapeHtml([person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown');
+            const department = escapeHtml(person.department_name || '');
+            const initials = escapeHtml(getInitials(person.first_name, person.last_name));
+            const imgUrl = person.img_url || '';
+            const linkedinUrl = person.linkedin_url || '';
 
-            const photoHTML = imgUrl
-                ? `<img class="node-photo" src="${imgUrl}" alt="${fullName}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
-                   <div class="node-photo-placeholder" style="display:none;">${getInitials(data.first_name, data.last_name)}</div>`
-                : `<div class="node-photo-placeholder">${getInitials(data.first_name, data.last_name)}</div>`;
+            const photoHTML = isValidUrl(imgUrl)
+                ? `<img class="node-photo" src="${escapeHtml(imgUrl)}" alt="${fullName}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                   <div class="node-photo-placeholder" style="display:none;">${initials}</div>`
+                : `<div class="node-photo-placeholder">${initials}</div>`;
 
-            const linkedinHTML = linkedinUrl
-                ? `<a class="node-linkedin" href="${linkedinUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${linkedinSVG}</a>`
+            const linkedinHTML = isValidUrl(linkedinUrl)
+                ? `<a class="node-linkedin" href="${escapeHtml(linkedinUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${linkedinSVG}</a>`
                 : '';
 
             return `
-                <div class="node-card" data-id="${data.id}">
+                <div class="node-card" data-id="${escapeHtml(person.id || '')}">
                     ${photoHTML}
                     <div class="node-info">
                         <div class="node-name">${fullName}</div>
@@ -109,66 +202,14 @@ async function init() {
                 </div>
             `;
         })
-        .onNodeClick((d) => {
-            openModal(d.data);
+        .onNodeClick((node) => {
+            openModal(node.data);
         })
         .render();
 }
 
-// Modal elements
-const modalBackdrop = document.getElementById('modal-backdrop');
-const modalImg = document.getElementById('modal-img');
-const modalName = document.getElementById('modal-name');
-const modalDepartment = document.getElementById('modal-department');
-const modalDescription = document.getElementById('modal-description');
-const modalLinkedin = document.getElementById('modal-linkedin');
-const modalClose = document.getElementById('modal-close');
-
-// Open modal with person data
-function openModal(data) {
-    const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ') || 'Unknown';
-
-    modalName.textContent = fullName;
-    modalDepartment.textContent = data.department_name || '';
-    modalDescription.textContent = data.description || '';
-
-    if (data.img_url) {
-        modalImg.src = data.img_url;
-        modalImg.alt = fullName;
-        modalImg.style.display = 'block';
-    } else {
-        modalImg.style.display = 'none';
-    }
-
-    if (data.linkedin_url) {
-        modalLinkedin.href = data.linkedin_url;
-        modalLinkedin.classList.remove('hidden');
-    } else {
-        modalLinkedin.classList.add('hidden');
-    }
-
-    modalBackdrop.classList.remove('hidden');
-}
-
-// Close modal
-function closeModal() {
-    modalBackdrop.classList.add('hidden');
-}
-
-// Modal event listeners
-modalClose.addEventListener('click', closeModal);
-
-modalBackdrop.addEventListener('click', (e) => {
-    if (e.target === modalBackdrop) {
-        closeModal();
-    }
-});
-
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) {
-        closeModal();
-    }
-});
-
 // Start app when DOM ready
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    initModal();
+    init();
+});
