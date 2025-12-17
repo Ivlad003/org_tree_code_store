@@ -115,5 +115,60 @@ async function init() {
         .render();
 }
 
+// Modal elements
+const modalBackdrop = document.getElementById('modal-backdrop');
+const modalImg = document.getElementById('modal-img');
+const modalName = document.getElementById('modal-name');
+const modalDepartment = document.getElementById('modal-department');
+const modalDescription = document.getElementById('modal-description');
+const modalLinkedin = document.getElementById('modal-linkedin');
+const modalClose = document.getElementById('modal-close');
+
+// Open modal with person data
+function openModal(data) {
+    const fullName = [data.first_name, data.last_name].filter(Boolean).join(' ') || 'Unknown';
+
+    modalName.textContent = fullName;
+    modalDepartment.textContent = data.department_name || '';
+    modalDescription.textContent = data.description || '';
+
+    if (data.img_url) {
+        modalImg.src = data.img_url;
+        modalImg.alt = fullName;
+        modalImg.style.display = 'block';
+    } else {
+        modalImg.style.display = 'none';
+    }
+
+    if (data.linkedin_url) {
+        modalLinkedin.href = data.linkedin_url;
+        modalLinkedin.classList.remove('hidden');
+    } else {
+        modalLinkedin.classList.add('hidden');
+    }
+
+    modalBackdrop.classList.remove('hidden');
+}
+
+// Close modal
+function closeModal() {
+    modalBackdrop.classList.add('hidden');
+}
+
+// Modal event listeners
+modalClose.addEventListener('click', closeModal);
+
+modalBackdrop.addEventListener('click', (e) => {
+    if (e.target === modalBackdrop) {
+        closeModal();
+    }
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modalBackdrop.classList.contains('hidden')) {
+        closeModal();
+    }
+});
+
 // Start app when DOM ready
 document.addEventListener('DOMContentLoaded', init);
