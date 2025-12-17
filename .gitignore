@@ -13,3 +13,10 @@ Thumbs.db
 
 # Node modules (if added later)
 node_modules/
+
+# Local reports and data files
+SESSION_SUMMARY.md
+DATA_MISMATCH_REPORT.md
+DATA_MISMATCH_REPORT_UA.md
+staff.json
+files.json
