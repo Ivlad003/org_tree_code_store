@@ -184,8 +184,8 @@ async function init() {
     chart = new d3.OrgChart()
         .container('#chart-container')
         .data(data)
-        .nodeWidth(() => 250)
-        .nodeHeight(() => 80)
+        .nodeWidth(() => 280)
+        .nodeHeight(() => 120)
         .compactMarginBetween(() => 25)
         .compactMarginPair(() => 50)
         .siblingsMargin(() => 25)
@@ -199,6 +199,7 @@ async function init() {
             const person = node.data;
             const fullName = escapeHtml([person.first_name, person.last_name].filter(Boolean).join(' ') || 'Unknown');
             const department = escapeHtml(person.department_name || '');
+            const description = escapeHtml(person.description || '');
             const initials = escapeHtml(getInitials(person.first_name, person.last_name));
             const imgUrl = person.img_url || '';
             const linkedinUrl = person.linkedin_url || '';
@@ -212,12 +213,17 @@ async function init() {
                 ? `<a class="node-linkedin" href="${escapeHtml(linkedinUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();">${linkedinSVG}</a>`
                 : '';
 
+            const descriptionHTML = description
+                ? `<div class="node-description">${description}</div>`
+                : '';
+
             return `
                 <div class="node-card" data-id="${escapeHtml(person.id || '')}">
                     ${photoHTML}
                     <div class="node-info">
                         <div class="node-name">${fullName}</div>
                         <div class="node-department">${department}</div>
+                        ${descriptionHTML}
                     </div>
                     ${linkedinHTML}
                 </div>
