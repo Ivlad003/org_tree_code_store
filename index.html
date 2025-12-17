@@ -1,9 +1,40 @@
-<iframe 
-            height="700px" 
-            width="100%" 
-            style="border:none;"
-            allowfullscreen
-            src="https://orgchart.hexviz.com/?config=%7B%22data%22%3A%22https%3A%2F%2Fdocs.google.com%2Fspreadsheets%2Fd%2Fe%2F2PACX-1vTKqR9KxEHV1Lr2acNGfHxU0qO3CPWwfxaTdp9BD_n6T3X48n-MxCL65ocaTn180TQfO9x5OkjJwPYN%2Fpub%3Foutput%3Dcsv%22%2C%22type%22%3A%22light%22%2C%22doc%22%3A%22%22%7D&chart=%7B%22css%22%3A%22body%7Bbackground-color%3Awhite%3B%7D.link%7Bstroke%3A%23E4E2E9%7D%22%2C%22nodeWidth%22%3A220%2C%22nodeHeight%22%3A85%2C%22compactMarginBetween%22%3A25%2C%22compactMarginPair%22%3A50%2C%22bgColor%22%3A%22%23ffffff%22%2C%22siblingsMargin%22%3A25%2C%22neighbourMargin%22%3A80%2C%22childrenMargin%22%3A60%2C%22compact%22%3Atrue%2C%22duration%22%3A400%2C%22setActiveNodeCentered%22%3Atrue%2C%22rootMargin%22%3A40%2C%22nodeContent%22%3A%22%20%3Cdiv%20style%3D%5C%22font-family%3A%20'Inter'%2C%20sans-serif%3Bbackground-color%3A%23ffffff%3B%20position%3Aabsolute%3Bmargin-top%3A-1px%3B%20margin-left%3A-1px%3Bwidth%3A%7BnodeWidth%7Dpx%3Bheight%3A%7BnodeHeight%7Dpx%3Bborder-radius%3A10px%3Bborder%3A%201px%20solid%20%23E4E2E9%5C%22%3E%5Cn%20%3Cdiv%20style%3D%5C%22background-color%3A%23ffffff%3Bposition%3Aabsolute%3Bmargin-top%3A-25px%3Bmargin-left%3A15px%3Bborder-radius%3A100px%3Bwidth%3A50px%3Bheight%3A50px%3B%5C%22%3E%3C%2Fdiv%3E%20%5Cn%20%3Cimg%20src%3D%5C%22%7Bimg_url%7D%5C%22%20style%3D%5C%22position%3Aabsolute%3Bmargin-top%3A-20px%3Bmargin-left%3A20px%3Bborder-radius%3A100px%3Bwidth%3A40px%3Bheight%3A40px%3B%5C%22%20%2F%3E%5Cn%20%3Cdiv%20style%3D%5C%22font-size%3A15px%3Bcolor%3A%2308011E%3Bmargin-left%3A20px%3Bmargin-top%3A32px%5C%22%3E%20%7Bfirst_name%7D%20%3C%2Fdiv%3E%5Cn%20%3Cdiv%20style%3D%5C%22color%3A%23716E7B%3Bmargin-left%3A20px%3Bmargin-top%3A3px%3Bfont-size%3A10px%3B%5C%22%3E%20%7Bdepartment_name%7D%20%3C%2Fdiv%3E%5Cn%20%3C%2Fdiv%3E%20%5Cn%22%2C%22count%22%3A20%7D" 
-            >
-      </iframe>
-    
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Organization Chart</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="chart-container"></div>
+
+    <!-- Modal -->
+    <div id="modal-backdrop" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close">&times;</button>
+            <div class="modal-photo">
+                <img id="modal-img" src="" alt="Profile photo">
+            </div>
+            <h2 id="modal-name"></h2>
+            <p id="modal-department" class="modal-department"></p>
+            <p id="modal-description" class="modal-description"></p>
+            <a id="modal-linkedin" class="modal-linkedin-btn" href="" target="_blank" rel="noopener noreferrer">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                </svg>
+                View LinkedIn
+            </a>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3-flextree@2.1.2/build/d3-flextree.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
