@@ -1,5 +1,7 @@
 # MCP configuration (contains local settings)
 .mcp.json
+.claude
+.codex
 
 # OS files
 .DS_Store
