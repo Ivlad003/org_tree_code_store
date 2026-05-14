@@ -25,14 +25,20 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'login') {
-        $expected = $_ENV['ADMIN_PASSWORD'] ?? '';
-        $supplied = $_POST['password'] ?? '';
-        if ($expected !== '' && is_string($supplied) && hash_equals($expected, $supplied)) {
+        $expectedEmail = $_ENV['ADMIN_EMAIL'] ?? '';
+        $expectedPass  = $_ENV['ADMIN_PASSWORD'] ?? '';
+        $suppliedEmail = is_string($_POST['email'] ?? null) ? trim($_POST['email']) : '';
+        $suppliedPass  = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
+        // Compare both factors with hash_equals; AND the results so neither
+        // check short-circuits (keeps the comparison timing-independent).
+        $emailOk = $expectedEmail !== '' && hash_equals(strtolower($expectedEmail), strtolower($suppliedEmail));
+        $passOk  = $expectedPass !== ''  && hash_equals($expectedPass, $suppliedPass);
+        if ($emailOk && $passOk) {
             session_regenerate_id(true);
             $_SESSION['admin'] = true;
             redirect('admin.php');
         }
-        setFlash('err', 'Wrong password.');
+        setFlash('err', 'Wrong email or password.');
         redirect('admin.php');
     }
 
@@ -95,8 +101,12 @@ if (!isAdmin()) {
         <form method="post" class="card">
             <input type="hidden" name="action" value="login">
             <div class="field">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" autocomplete="username" autofocus required>
+            </div>
+            <div class="field">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" autofocus required>
+                <input type="password" id="password" name="password" autocomplete="current-password" required>
             </div>
             <div class="actions">
                 <button type="submit">Sign in</button>
