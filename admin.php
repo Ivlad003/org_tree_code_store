@@ -184,7 +184,7 @@ $employees = getEmployees();
             <?php if (!$isNew): ?>
                 <div class="avatar-block">
                     <?php if ($hasAvatar): ?>
-                        <img class="avatar-preview" src="<?= escapeHtml($editEmployee['avatar_path']) ?>?v=<?= time() ?>" alt="">
+                        <img class="avatar-preview" src="avatar.php?id=<?= (int)$editEmployee['id'] ?>&v=<?= time() ?>" alt="">
                     <?php else: ?>
                         <div class="avatar-preview thumb placeholder">no photo</div>
                     <?php endif; ?>
@@ -361,7 +361,7 @@ $employees = getEmployees();
                     <tr data-name="<?= escapeHtml(strtolower($full)) ?>" data-dept="<?= escapeHtml($dept) ?>">
                         <td>
                             <?php if (!empty($e['avatar_path'])): ?>
-                                <img class="thumb" src="<?= escapeHtml($e['avatar_path']) ?>" alt="">
+                                <img class="thumb" src="avatar.php?id=<?= (int)$e['id'] ?>" alt="">
                             <?php else: ?>
                                 <span class="thumb placeholder">—</span>
                             <?php endif; ?>

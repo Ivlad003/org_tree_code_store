@@ -1,7 +1,49 @@
 <?php
 require __DIR__ . '/db.php';
+startSession();
+
+$viewerFlash = $_SESSION['viewer_flash'] ?? null;
+unset($_SESSION['viewer_flash']);
+
+// ── Viewer gate ──────────────────────────────────────────────────────────────
+// When VIEWER_AUTH=open this is a no-op (public chart). When =google, an
+// unauthenticated visitor gets the sign-in page instead of the chart, and the
+// org data is never emitted into the page.
+if (!isViewer()) {
+    ?><!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>code.store — Team</title>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="assets/css/admin.css">
+    </head>
+    <body>
+    <div class="login-wrap">
+        <h1>code.store · Team</h1>
+        <?php if ($viewerFlash): ?>
+            <div class="flash err"><?= escapeHtml($viewerFlash) ?></div>
+        <?php endif; ?>
+        <div class="card" style="text-align:center">
+            <p style="color:var(--text-muted);margin:0 0 18px">
+                This org chart is private. Sign in with your
+                <strong>@code.store</strong> Google account to view it.
+            </p>
+            <a class="btn" href="auth_google.php?action=start">Sign in with Google</a>
+            <div style="margin-top:14px">
+                <a class="btn secondary" href="admin.php">Admin sign-in</a>
+            </div>
+        </div>
+    </div>
+    </body>
+    </html><?php
+    exit;
+}
+
 $tree = getTree();
 $loggedIn = isAdmin();
+$viewer = viewerEmail();
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -73,6 +115,11 @@ $loggedIn = isAdmin();
             <a class="zoom-btn" href="admin.php" title="<?= $loggedIn ? 'Admin panel' : 'Admin sign-in' ?>" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;text-decoration:none;display:inline-flex;align-items:center;">
                 <?= $loggedIn ? 'ADMIN' : 'SIGN IN' ?>
             </a>
+            <?php if ($viewer && !$loggedIn): ?>
+                <a class="zoom-btn" href="auth_google.php?action=signout" title="Sign out (<?= escapeHtml($viewer) ?>)" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;text-decoration:none;display:inline-flex;align-items:center;">
+                    SIGN OUT
+                </a>
+            <?php endif; ?>
         </div>
     </header>
 

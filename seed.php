@@ -13,7 +13,8 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__ . '/db.php';
 
-const CSV_PATH = __DIR__ . '/assets/csv/org_struct_code_store.csv';
+// CSV lives under data/ (web-denied), not the public webroot.
+const CSV_PATH = __DIR__ . '/data/org_struct_code_store.csv';
 const AVATAR_DIR = __DIR__ . '/uploads/avatars';
 const GROUP_NAMES = ['pms', 'pm', 'qa', 'developers', 'developer', 'hr', 'growth', 'bdr', 'founders', 'code.store'];
 

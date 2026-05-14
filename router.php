@@ -3,8 +3,9 @@
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
 
-// Block sensitive paths regardless of how the file is served
-foreach (['/.env', '/.git', '/data', '/db.php'] as $blocked) {
+// Block sensitive paths regardless of how the file is served.
+// /uploads is viewer-gated — avatars are served only through avatar.php.
+foreach (['/.env', '/.git', '/data', '/db.php', '/uploads', '/assets/csv'] as $blocked) {
     if ($uri === $blocked || str_starts_with($uri, $blocked . '/')) {
         http_response_code(404);
         exit;

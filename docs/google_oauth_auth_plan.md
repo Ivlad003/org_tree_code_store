@@ -1,6 +1,7 @@
 # Authentication plan: two-gate model — investigation & plan
 
-Status: **proposal / not yet implemented**
+Status: **MVP spiked — 2026-05-14** (behind `VIEWER_AUTH` flag; Google Cloud credentials
+still needed to exercise the live OAuth flow). See "Spike status" at the bottom.
 Scope change: this widens the original `claude_code_admin_prompt.md` scope, which
 explicitly excluded Google OAuth, user roles, *and* assumed the chart was public read-only.
 
@@ -249,7 +250,37 @@ admin auth is a later step if attribution/audit becomes a requirement.
 
 1. ~~Confirm `code.store` is Workspace.~~ **Done — confirmed 2026-05-13.**
 2. ~~Decide avatar strategy.~~ **Done — PHP passthrough (`avatar.php`) for MVP, nginx deploy.**
-3. Pick the viewer session lifetime cap (8h vs 24h).
-4. Confirm the admin gate stays shared-password for MVP (assumed yes).
-5. Port the current `.htaccess` rules to the nginx config (see Static-file lockdown section).
-6. Spike the viewer-gate MVP behind a feature flag in `.env` (`VIEWER_AUTH=google|open`).
+3. ~~Pick the viewer session lifetime cap.~~ **Done — 8h (`VIEWER_SESSION_MAX_AGE` in `db.php`).**
+4. ~~Spike the viewer-gate MVP behind a `VIEWER_AUTH` flag.~~ **Done — 2026-05-14.**
+5. Confirm the admin gate stays shared-password for MVP (assumed yes).
+6. Create the Google Cloud OAuth client; fill `GOOGLE_CLIENT_ID` / `SECRET` /
+   `OAUTH_REDIRECT_URI` in `.env`; flip `VIEWER_AUTH=google`; test the live flow.
+7. On deploy: apply the nginx config from the Static-file lockdown section
+   (the local `php -S` parity lives in `router.php`).
+
+---
+
+## Spike status — 2026-05-14
+
+Implemented behind `VIEWER_AUTH` (`open` = current public chart, `google` = gated):
+
+| File | Change |
+|---|---|
+| `auth_google.php` | **new** — OIDC dance: `?action=start`, callback (`?code`/`?state`), `?action=signout`. Validates `iss`/`aud`/`exp` and enforces `hd === code.store` + `email_verified`. |
+| `avatar.php` | **new** — viewer-gated passthrough; `int`-cast id kills traversal; `readfile()` with `Cache-Control: private`. |
+| `db.php` | `isViewer()` / `requireViewer()` / `viewerEmail()` / `viewerAuthMode()`; `VIEWER_SESSION_MAX_AGE` 8h cap (Option A); `getTree()` emits `img_url` as `avatar.php?id=…`. |
+| `index.php` | viewer gate — renders a "Sign in with Google" landing page and emits **no** `ORG_DATA` when unauthenticated; header sign-out link. |
+| `admin.php` | avatar `<img>` tags point at `avatar.php?id=…`. |
+| `app.js` | dropped the CSV fallback + `parseCSV` (dead in PHP-backend mode). |
+| `router.php` | local `php -S` parity: blocks `/uploads` and `/assets/csv`. |
+| CSV | moved `assets/csv/org_struct_code_store.csv` → `data/` (web-denied); `seed.php` path updated. |
+| `.env(.example)` | `VIEWER_AUTH`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`. |
+
+**Verified** (`php -S` smoke test, both modes): `open` serves the chart + avatars and
+blocks direct `/uploads` & `/data` paths; `google` shows the sign-in page with no
+`ORG_DATA` in the response and returns 403 from `avatar.php`. The live Google round-trip
+is **not** yet exercised — needs real Cloud credentials (next step 6).
+
+**Known MVP limitations** (deliberate — see Effort "Production" row): ID token is decoded
+but not JWKS-signature-verified (acceptable: fetched directly from Google's token endpoint
+over TLS); no `users` allowlist; no audit log; admin gate unchanged.

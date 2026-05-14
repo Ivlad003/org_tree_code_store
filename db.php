@@ -104,7 +104,8 @@ function getTree(): array {
             'first_name' => $e['first_name'] ?? '',
             'last_name' => $e['last_name'] ?? '',
             'department_name' => $e['department_name'] ?? '',
-            'img_url' => $e['avatar_path'] ?? '',
+            // Avatars are served through avatar.php (viewer-gated), never the raw path.
+            'img_url' => !empty($e['avatar_path']) ? 'avatar.php?id=' . (int)$e['id'] : '',
             'linkedin_url' => $e['linkedin_url'] ?? '',
             'description' => $e['description'] ?? '',
         ];
@@ -274,6 +275,45 @@ function requireAdmin(): void {
         header('Location: admin.php');
         exit;
     }
+}
+
+// ── Viewer gate (Google OAuth, restricted to the code.store Workspace) ───────
+// See docs/google_oauth_auth_plan.md. The admin gate (above) is independent;
+// an admin always counts as a viewer, but not vice versa.
+
+// Option A from the plan: cap the viewer session so a fired employee's stale
+// session can't outlive this window. Tighten by lowering, or move to Option B.
+const VIEWER_SESSION_MAX_AGE = 8 * 3600; // 8 hours
+
+function viewerAuthMode(): string {
+    loadEnv();
+    return strtolower(trim($_ENV['VIEWER_AUTH'] ?? 'google')) === 'open' ? 'open' : 'google';
+}
+
+function isViewer(): bool {
+    if (viewerAuthMode() === 'open') return true;  // gate disabled — public chart
+    if (isAdmin()) return true;                    // admin implies viewer
+    startSession();
+    if (empty($_SESSION['viewer_email'])) return false;
+    $loginAt = (int)($_SESSION['viewer_login_at'] ?? 0);
+    if ($loginAt <= 0 || (time() - $loginAt) > VIEWER_SESSION_MAX_AGE) {
+        unset($_SESSION['viewer_email'], $_SESSION['viewer_name'], $_SESSION['viewer_login_at']);
+        return false;
+    }
+    return true;
+}
+
+function requireViewer(): void {
+    if (!isViewer()) {
+        http_response_code(403);
+        exit('Forbidden — sign in to view this resource.');
+    }
+}
+
+function viewerEmail(): ?string {
+    startSession();
+    $email = $_SESSION['viewer_email'] ?? null;
+    return is_string($email) && $email !== '' ? $email : null;
 }
 
 function csrfToken(): string {

@@ -1,7 +1,3 @@
-// ── Config ─────────────────────────────────────────────────────────────────
-// const DATA_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTKqR9KxEHV1Lr2acNGfHxU0qO3CPWwfxaTdp9BD_n6T3X48n-MxCL65ocaTn180TQfO9x5OkjJwPYN/pub?output=csv';
-const DATA_URL = 'assets/csv/org_struct_code_store.csv';
-
 // Department colour palette
 const DEPT_COLORS = {
     pms:        '#3b82f6',
@@ -46,30 +42,6 @@ function isValidUrl(str) {
     } catch { return false; }
 }
 
-// ── CSV parser (RFC 4180 compliant) ─────────────────────────────────────────
-function parseCSV(csv) {
-    const lines = csv.trim().split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-        const values = [];
-        let cur = '', inQ = false, i = 0;
-        while (i < line.length) {
-            const c = line[i];
-            if (c === '"') {
-                if (inQ && line[i + 1] === '"') { cur += '"'; i++; }
-                else inQ = !inQ;
-            } else if (c === ',' && !inQ) {
-                values.push(cur.trim()); cur = '';
-            } else { cur += c; }
-            i++;
-        }
-        values.push(cur.trim());
-        const obj = {};
-        headers.forEach((h, idx) => { obj[h] = values[idx] || ''; });
-        return obj;
-    });
-}
-
 // ── Data loading & tree restructuring ───────────────────────────────────────
 function processRows(rows) {
     rows = rows.filter(r => r.id && String(r.id).trim());
@@ -89,20 +61,12 @@ function processRows(rows) {
 }
 
 async function loadData() {
-    // Prefer server-injected data when running under PHP backend
+    // Data is injected server-side by index.php (window.ORG_DATA).
     if (typeof window !== 'undefined' && Array.isArray(window.ORG_DATA)) {
         return processRows(window.ORG_DATA);
     }
-    // Fallback: fetch the bundled CSV (static-site mode)
-    try {
-        const res = await fetch(DATA_URL);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const csv = await res.text();
-        return processRows(parseCSV(csv));
-    } catch (e) {
-        console.error('Failed to load data:', e);
-        return [];
-    }
+    console.error('window.ORG_DATA missing — this page must be served by index.php');
+    return [];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

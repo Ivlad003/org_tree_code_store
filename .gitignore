@@ -27,5 +27,6 @@ files.json
 .env
 data/*
 !data/.gitkeep
+!data/org_struct_code_store.csv
 uploads/avatars/*
 !uploads/avatars/.gitkeep
