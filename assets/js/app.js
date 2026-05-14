@@ -71,31 +71,34 @@ function parseCSV(csv) {
 }
 
 // ── Data loading & tree restructuring ───────────────────────────────────────
+function processRows(rows) {
+    rows = rows.filter(r => r.id && String(r.id).trim());
+    return rows.map(r => {
+        // Fix comma-split names (e.g. "Zenyk, Haiduk" parsed into first_name)
+        if (r.first_name && r.first_name.includes(',')) {
+            const [a, b] = r.first_name.split(',').map(s => s.trim());
+            r.first_name = a;
+            if (!r.last_name && b) r.last_name = b;
+        }
+        // Fix QA category node mislabelled as BDR (id=8) in legacy CSV
+        if (String(r.id) === '8' && r.first_name === 'QA' && r.department_name === 'BDR') {
+            r.department_name = 'QA';
+        }
+        return r;
+    });
+}
+
 async function loadData() {
+    // Prefer server-injected data when running under PHP backend
+    if (typeof window !== 'undefined' && Array.isArray(window.ORG_DATA)) {
+        return processRows(window.ORG_DATA);
+    }
+    // Fallback: fetch the bundled CSV (static-site mode)
     try {
         const res = await fetch(DATA_URL);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const csv = await res.text();
-        let rows = parseCSV(csv);
-
-        // Remove empty rows
-        rows = rows.filter(r => r.id && r.id.trim());
-
-        rows = rows.map(r => {
-            // Fix comma-split names (e.g. "Zenyk, Haiduk" parsed into first_name)
-            if (r.first_name && r.first_name.includes(',')) {
-                const [a, b] = r.first_name.split(',').map(s => s.trim());
-                r.first_name = a;
-                if (!r.last_name && b) r.last_name = b;
-            }
-            // Fix QA category node mislabelled as BDR (id=8)
-            if (r.id === '8' && r.first_name === 'QA' && r.department_name === 'BDR') {
-                r.department_name = 'QA';
-            }
-            return r;
-        });
-
-        return rows;
+        return processRows(parseCSV(csv));
     } catch (e) {
         console.error('Failed to load data:', e);
         return [];

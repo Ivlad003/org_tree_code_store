@@ -22,3 +22,10 @@ DATA_MISMATCH_REPORT.md
 DATA_MISMATCH_REPORT_UA.md
 staff.json
 files.json
+
+# Admin panel runtime state
+.env
+data/*
+!data/.gitkeep
+uploads/avatars/*
+!uploads/avatars/.gitkeep
