@@ -255,6 +255,7 @@ admin auth is a later step if attribution/audit becomes a requirement.
 5. Confirm the admin gate stays shared-password for MVP (assumed yes).
 6. Create the Google Cloud OAuth client; fill `GOOGLE_CLIENT_ID` / `SECRET` /
    `OAUTH_REDIRECT_URI` in `.env`; flip `VIEWER_AUTH=google`; test the live flow.
+   See **[`google_oauth_setup.md`](google_oauth_setup.md)** for the step-by-step walkthrough.
 7. On deploy: apply the nginx config from the Static-file lockdown section
    (the local `php -S` parity lives in `router.php`).
 
@@ -284,3 +285,5 @@ is **not** yet exercised — needs real Cloud credentials (next step 6).
 **Known MVP limitations** (deliberate — see Effort "Production" row): ID token is decoded
 but not JWKS-signature-verified (acceptable: fetched directly from Google's token endpoint
 over TLS); no `users` allowlist; no audit log; admin gate unchanged.
+
+claude --resume b151e3dd-c30b-4fdd-96fb-33ea0fa9b79c
