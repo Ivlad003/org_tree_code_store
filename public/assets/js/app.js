@@ -42,6 +42,17 @@ function isValidUrl(str) {
     } catch { return false; }
 }
 
+// Photo sources may be relative (e.g. "avatar.php?id=10000"), so resolve them
+// against the page URL before validating — unlike isValidUrl, which expects
+// absolute URLs (used for external links like LinkedIn).
+function isValidImgSrc(str) {
+    if (!str) return false;
+    try {
+        const u = new URL(str, window.location.href);
+        return u.protocol === 'https:' || u.protocol === 'http:';
+    } catch { return false; }
+}
+
 // ── Data loading & tree restructuring ───────────────────────────────────────
 function processRows(rows) {
     rows = rows.filter(r => r.id && String(r.id).trim());
@@ -221,7 +232,7 @@ function renderChart(data) {
 
                 const photoHTML = isGroup
                     ? ''
-                    : (isValidUrl(p.img_url)
+                    : (isValidImgSrc(p.img_url)
                         ? `<img class="node-photo" src="${escapeHtml(p.img_url)}" alt="${fullName}"
                               onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                            <div class="node-avatar" style="display:none;--dept-color:${color}">${ini}</div>`
@@ -369,7 +380,7 @@ function openModal(person) {
     const photo  = document.getElementById('modal-photo');
     const avatar = document.getElementById('modal-avatar');
 
-    if (person.img_url && isValidUrl(person.img_url)) {
+    if (person.img_url && isValidImgSrc(person.img_url)) {
         photo.src            = person.img_url;
         photo.alt            = fullName;
         photo.style.display  = 'block';
