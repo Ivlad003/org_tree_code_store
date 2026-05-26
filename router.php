@@ -1,26 +1,21 @@
 <?php
-// Router for `php -S 127.0.0.1:8000 router.php`. Apache/nginx use .htaccess instead.
+// Dev-only router for the PHP built-in server. Run from the repo root:
+//   php -S 127.0.0.1:8000 -t public router.php
+// Production uses nginx (or Apache) with `public/` as the document root.
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?? '/';
 
-// Block sensitive paths regardless of how the file is served.
-// /uploads is viewer-gated — avatars are served only through avatar.php.
-foreach (['/.env', '/.git', '/data', '/db.php', '/uploads', '/assets/csv'] as $blocked) {
-    if ($uri === $blocked || str_starts_with($uri, $blocked . '/')) {
-        http_response_code(404);
-        exit;
-    }
-}
-
-// Map / and /admin to .php
+// Clean URLs: map / and /admin to their PHP entry points.
 if ($uri === '/' || $uri === '') {
-    require __DIR__ . '/index.php';
+    require __DIR__ . '/public/index.php';
     return true;
 }
 if ($uri === '/admin') {
-    require __DIR__ . '/admin.php';
+    require __DIR__ . '/public/admin.php';
     return true;
 }
 
-// Let php -S serve everything else (static files + .php)
+// Everything else is served from the document root (public/) as-is.
+// Sensitive dirs (src/, data/, uploads/) are siblings of public/, so the
+// built-in server cannot reach them — no blocklist needed.
 return false;

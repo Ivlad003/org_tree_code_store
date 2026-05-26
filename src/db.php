@@ -1,13 +1,14 @@
 <?php
-// Shared DB access + helpers. Included by index.php / admin.php / upload.php / seed.php.
-// Never expose directly: .htaccess denies HTTP requests for this file.
+// Shared DB access + helpers. Included by the entry points in public/ and by seed.php.
+// Lives in src/ (outside the public/ web root), so it's never reachable over HTTP.
 
 declare(strict_types=1);
 
 const EMPLOYEE_ID_OFFSET = 10000;
 
 function projectRoot(): string {
-    return __DIR__;
+    // db.php lives in src/; the repo root (holding data/, uploads/, .env) is its parent.
+    return dirname(__DIR__);
 }
 
 function loadEnv(string $path = null): void {

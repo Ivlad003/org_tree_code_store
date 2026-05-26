@@ -99,7 +99,7 @@ are registered in step 3.
 ## 5. Test the flow
 
 ```bash
-php -S 127.0.0.1:8000 router.php
+php -S 127.0.0.1:8000 -t public router.php
 ```
 
 Open http://localhost:8000/ — you should see the **Sign in with Google**
@@ -139,7 +139,7 @@ check would reject it at step 4.
   new secret into `.env`. Old secret stops working immediately.
 - **Revoke a session**: at the user level, suspend the Google account in
   Workspace admin. New sign-ins fail immediately; existing sessions expire
-  within `VIEWER_SESSION_MAX_AGE` (8h, set in `db.php`).
+  within `VIEWER_SESSION_MAX_AGE` (8h, set in `src/db.php`).
 - **Revoke the whole client**: Credentials → delete the OAuth client.
   All in-flight sessions stay valid until they expire (cap is 8h); no one can
   sign in anew. Useful as a kill-switch.

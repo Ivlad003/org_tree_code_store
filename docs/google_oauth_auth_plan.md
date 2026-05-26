@@ -116,7 +116,7 @@ allow/deny. nginx has to *ask PHP*.
 
 ```php
 <?php
-require __DIR__ . '/db.php';
+require __DIR__ . '/../src/db.php';
 requireViewer();
 $id = (int)($_GET['id'] ?? 0);                 // int cast kills path traversal
 $file = projectRoot() . "/uploads/avatars/$id.webp";
@@ -131,22 +131,23 @@ readfile($file);
 
 ### nginx config (replaces the current `.htaccess`)
 
+The app now uses a `public/` document root, so `src/`, `data/`, `uploads/`, `.env`,
+`seed.php`, and `router.php` are all **outside** the served tree and unreachable over
+HTTP by construction — the deny rules below are defensive belt-and-suspenders, not the
+primary control.
+
 ```nginx
-# --- sensitive files / dirs: unconditional deny ---
-location ~ /\.(?!well-known)        { deny all; }   # .env, .git, dotfiles
-location = /db.php                  { deny all; }
-location ~ ^/(seed|router)\.php$    { deny all; }   # CLI/internal only
-location ^~ /data/                  { deny all; }
-location ^~ /uploads/               { deny all; }   # avatars only via avatar.php
-location ^~ /assets/csv/            { deny all; }   # belt-and-suspenders
+root /var/www/org-tree-code-store.test/public;   # serve ONLY public/
+index index.php;
+
+# --- defensive deny (these paths don't exist under public/ anyway) ---
+location ~ /\.(?!well-known)  { deny all; }   # dotfiles
 
 # --- option B only (later): internal location for X-Accel-Redirect ---
 # location /protected-avatars/ {
 #     internal;
 #     alias /var/www/org-tree-code-store.test/uploads/avatars/;
 # }
-
-index index.php index.html;
 ```
 
 `upload.php` stays publicly POST-able (it's the admin upload endpoint and runs its own

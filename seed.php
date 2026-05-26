@@ -1,5 +1,5 @@
 <?php
-// One-time seed: import assets/csv/org_struct_code_store.csv into SQLite.
+// One-time seed: import data/org_struct_code_store.csv into SQLite.
 // Run from CLI:  php seed.php
 // Safe to re-run only if you first delete data/db.sqlite — schema migrations
 // run on connect, but this script INSERTs without dedup.
@@ -11,7 +11,7 @@ if (PHP_SAPI !== 'cli') {
     exit('seed.php must be run from the command line');
 }
 
-require __DIR__ . '/db.php';
+require __DIR__ . '/src/db.php';
 
 // CSV lives under data/ (web-denied), not the public webroot.
 const CSV_PATH = __DIR__ . '/data/org_struct_code_store.csv';

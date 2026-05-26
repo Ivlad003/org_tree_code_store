@@ -1,4 +1,50 @@
-<!DOCTYPE html>
+<?php
+require __DIR__ . '/../src/db.php';
+startSession();
+
+$viewerFlash = $_SESSION['viewer_flash'] ?? null;
+unset($_SESSION['viewer_flash']);
+
+// ── Viewer gate ──────────────────────────────────────────────────────────────
+// When VIEWER_AUTH=open this is a no-op (public chart). When =google, an
+// unauthenticated visitor gets the sign-in page instead of the chart, and the
+// org data is never emitted into the page.
+if (!isViewer()) {
+    ?><!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>code.store — Team</title>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="assets/css/admin.css">
+    </head>
+    <body>
+    <div class="login-wrap">
+        <h1>code.store · Team</h1>
+        <?php if ($viewerFlash): ?>
+            <div class="flash err"><?= escapeHtml($viewerFlash) ?></div>
+        <?php endif; ?>
+        <div class="card" style="text-align:center">
+            <p style="color:var(--text-muted);margin:0 0 18px">
+                This org chart is private. Sign in with your
+                <strong>@code.store</strong> Google account to view it.
+            </p>
+            <a class="btn" href="auth_google.php?action=start">Sign in with Google</a>
+            <div style="margin-top:14px">
+                <a class="btn secondary" href="admin.php">Admin sign-in</a>
+            </div>
+        </div>
+    </div>
+    </body>
+    </html><?php
+    exit;
+}
+
+$tree = getTree();
+$loggedIn = isAdmin();
+$viewer = viewerEmail();
+?><!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -15,7 +61,6 @@
     <!-- ── Header ───────────────────────────────────────────────── -->
     <header id="header">
         <a id="header-logo" href="#">
-            <!-- code.store wordmark (simplified) -->
             <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
                 <rect width="22" height="22" rx="6" fill="var(--accent)"/>
                 <path d="M6 8l-3 3 3 3M16 8l3 3-3 3M13 6l-4 10" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -25,7 +70,6 @@
 
         <div class="header-divider"></div>
 
-        <!-- Search -->
         <div id="search-wrap">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -40,7 +84,6 @@
 
         <div class="header-divider"></div>
 
-        <!-- Department dropdown -->
         <div class="dept-dropdown" id="dept-dropdown">
             <button class="dept-trigger" id="dept-trigger" aria-haspopup="listbox" aria-expanded="false">
                 <span class="dot" id="dept-trigger-dot" style="background:var(--text-muted)"></span>
@@ -53,7 +96,6 @@
                 <button class="dept-option active" data-dept="all" data-label="All" role="option">
                     <span class="dot" style="background:var(--text-muted)"></span>All
                 </button>
-                <!-- populated dynamically -->
             </div>
         </div>
 
@@ -63,14 +105,21 @@
 
         <div class="header-divider"></div>
 
-        <!-- Zoom -->
         <div id="zoom-controls">
             <button class="zoom-btn" id="btn-zoom-in"   title="Zoom in">+</button>
             <button class="zoom-btn" id="btn-zoom-out"  title="Zoom out">−</button>
             <button class="zoom-btn" id="btn-fit"       title="Fit to screen" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em">FIT</button>
-            <button class="zoom-btn" id="btn-tree"      title="Expand all" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em">EXPAND</button>
+            <button class="zoom-btn" id="btn-tree"      title="Expand all"     style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em">EXPAND</button>
             <button class="zoom-btn" id="btn-compact"   title="Toggle compact/spread layout" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em">COMPACT</button>
-            <button class="zoom-btn" id="btn-theme"     title="Toggle light/dark theme" style="width:auto;padding:0 8px;font-size:13px">☀️</button>
+            <button class="zoom-btn" id="btn-theme"     title="Toggle light/dark theme"      style="width:auto;padding:0 8px;font-size:13px">☀️</button>
+            <a class="zoom-btn" href="admin.php" title="<?= $loggedIn ? 'Admin panel' : 'Admin sign-in' ?>" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;text-decoration:none;display:inline-flex;align-items:center;">
+                <?= $loggedIn ? 'ADMIN' : 'SIGN IN' ?>
+            </a>
+            <?php if ($viewer && !$loggedIn): ?>
+                <a class="zoom-btn" href="auth_google.php?action=signout" title="Sign out (<?= escapeHtml($viewer) ?>)" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;text-decoration:none;display:inline-flex;align-items:center;">
+                    SIGN OUT
+                </a>
+            <?php endif; ?>
         </div>
     </header>
 
@@ -111,7 +160,9 @@
     </div>
 </div>
 
-<!-- ── Scripts ───────────────────────────────────────────────────── -->
+<script>
+    window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+</script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-flextree@2.1.2/build/d3-flextree.js"></script>
