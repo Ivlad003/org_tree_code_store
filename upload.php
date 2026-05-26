@@ -49,56 +49,12 @@ if (empty($_FILES['avatar']['tmp_name'])) {
     exit;
 }
 
-$file = $_FILES['avatar'];
-if ($file['error'] !== UPLOAD_ERR_OK) {
-    flash('err', 'Upload failed (PHP error ' . (int)$file['error'] . ').');
+$error = storeAvatarUpload($id, $_FILES['avatar']);
+if ($error !== null) {
+    flash('err', $error);
     header('Location: ' . $redirect);
     exit;
 }
-if ($file['size'] > 5 * 1024 * 1024) {
-    flash('err', 'File too large (max 5 MB).');
-    header('Location: ' . $redirect);
-    exit;
-}
-
-$info = @getimagesize($file['tmp_name']);
-if (!$info) {
-    flash('err', 'Not a valid image.');
-    header('Location: ' . $redirect);
-    exit;
-}
-
-$img = match ($info[2]) {
-    IMAGETYPE_JPEG => @imagecreatefromjpeg($file['tmp_name']),
-    IMAGETYPE_PNG => @imagecreatefrompng($file['tmp_name']),
-    IMAGETYPE_WEBP => @imagecreatefromwebp($file['tmp_name']),
-    default => null,
-};
-if (!$img) {
-    flash('err', 'Unsupported image type (jpg, png, webp only).');
-    header('Location: ' . $redirect);
-    exit;
-}
-
-$w = imagesx($img); $h = imagesy($img);
-$max = 400;
-if ($w > $max || $h > $max) {
-    $scale = min($max / $w, $max / $h);
-    $resized = imagescale($img, (int)round($w * $scale), (int)round($h * $scale));
-    if ($resized) { imagedestroy($img); $img = $resized; }
-}
-
-$avatarDir = projectRoot() . '/uploads/avatars';
-if (!is_dir($avatarDir)) @mkdir($avatarDir, 0775, true);
-$outFs = $avatarDir . '/' . $id . '.webp';
-
-if (!imagewebp($img, $outFs, 85)) {
-    imagedestroy($img);
-    flash('err', 'Could not write avatar to disk.');
-    header('Location: ' . $redirect);
-    exit;
-}
-imagedestroy($img);
 
 // If the old path differed (legacy non-webp), drop the stale file
 if (!empty($employee['avatar_path']) && $employee['avatar_path'] !== 'uploads/avatars/' . $id . '.webp') {
@@ -106,6 +62,5 @@ if (!empty($employee['avatar_path']) && $employee['avatar_path'] !== 'uploads/av
     if (is_file($old)) @unlink($old);
 }
 
-setEmployeeAvatar($id, 'uploads/avatars/' . $id . '.webp');
 flash('ok', 'Avatar updated.');
 header('Location: ' . $redirect);

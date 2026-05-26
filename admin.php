@@ -53,8 +53,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('admin.php');
 
         case 'save_employee':
+            $wasNew = empty($_POST['id']);
             $id = saveEmployee($_POST);
-            setFlash('ok', !empty($_POST['id']) ? 'Employee updated.' : 'Employee created.');
+            // Optional photo submitted with the form (create flow needs the new id first).
+            $avatarErr = storeAvatarUpload($id, $_FILES['avatar'] ?? []);
+            if ($avatarErr !== null) {
+                setFlash('err', ($wasNew ? 'Employee created, but photo upload failed: ' : 'Saved, but photo upload failed: ') . $avatarErr);
+            } else {
+                setFlash('ok', $wasNew ? 'Employee created.' : 'Employee updated.');
+            }
             redirect('admin.php?edit=' . $id);
 
         case 'delete_employee':
@@ -207,10 +214,22 @@ $employees = getEmployees();
                 </div>
             <?php endif; ?>
 
-            <form method="post">
+            <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                 <input type="hidden" name="action" value="save_employee">
                 <input type="hidden" name="id" value="<?= escapeHtml((string)$editEmployee['id']) ?>">
+
+                <?php if ($isNew): ?>
+                    <div class="avatar-block">
+                        <div class="avatar-preview thumb placeholder">no photo</div>
+                        <div class="meta" style="flex:1">
+                            <div class="field">
+                                <label for="avatar">Photo (jpg / png / webp, max 5 MB)</label>
+                                <input type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/webp">
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <div class="form-row">
                     <div class="field">

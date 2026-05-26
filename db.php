@@ -237,6 +237,57 @@ function setEmployeeAvatar(int $id, ?string $path): void {
     $stmt->execute([$path, $id]);
 }
 
+// Process a single uploaded image ($_FILES entry) into uploads/avatars/{id}.webp,
+// scaling down to 400px and recording the path. Returns null on success, or a
+// human-readable error string. An empty upload (no file chosen) is a no-op → null.
+// Shared by upload.php (edit form) and admin.php save_employee (create form).
+function storeAvatarUpload(int $id, array $file): ?string {
+    $err = $file['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($err === UPLOAD_ERR_NO_FILE || empty($file['tmp_name'])) {
+        return null; // nothing uploaded — not an error
+    }
+    if ($err !== UPLOAD_ERR_OK) {
+        return 'Upload failed (PHP error ' . (int)$err . ').';
+    }
+    if (($file['size'] ?? 0) > 5 * 1024 * 1024) {
+        return 'File too large (max 5 MB).';
+    }
+
+    $info = @getimagesize($file['tmp_name']);
+    if (!$info) {
+        return 'Not a valid image.';
+    }
+    $img = match ($info[2]) {
+        IMAGETYPE_JPEG => @imagecreatefromjpeg($file['tmp_name']),
+        IMAGETYPE_PNG  => @imagecreatefrompng($file['tmp_name']),
+        IMAGETYPE_WEBP => @imagecreatefromwebp($file['tmp_name']),
+        default => null,
+    };
+    if (!$img) {
+        return 'Unsupported image type (jpg, png, webp only).';
+    }
+
+    $w = imagesx($img); $h = imagesy($img);
+    $max = 400;
+    if ($w > $max || $h > $max) {
+        $scale = min($max / $w, $max / $h);
+        $resized = imagescale($img, (int)round($w * $scale), (int)round($h * $scale));
+        if ($resized) { imagedestroy($img); $img = $resized; }
+    }
+
+    $avatarDir = projectRoot() . '/uploads/avatars';
+    if (!is_dir($avatarDir)) @mkdir($avatarDir, 0775, true);
+    $outFs = $avatarDir . '/' . $id . '.webp';
+    if (!imagewebp($img, $outFs, 85)) {
+        imagedestroy($img);
+        return 'Could not write avatar to disk.';
+    }
+    imagedestroy($img);
+
+    setEmployeeAvatar($id, 'uploads/avatars/' . $id . '.webp');
+    return null;
+}
+
 // ── Tree node options (for parent_id <select>) ───────────────────────────────
 
 function getParentOptions(): array {
