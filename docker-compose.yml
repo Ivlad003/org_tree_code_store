@@ -1,0 +1,33 @@
+services:
+  org-tree:
+    build: .
+    restart: unless-stopped
+    # Host loopback only — public access goes through the Dokploy/Traefik domain.
+    ports:
+      - "127.0.0.1:${LOCAL_PORT:-8080}:80"
+    environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@code.store}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?put ADMIN_PASSWORD in the environment}
+      # "open" serves the chart to anyone; "google" requires a @code.store Google
+      # account. Defaults closed: an unset value must not publish the org chart.
+      VIEWER_AUTH: ${VIEWER_AUTH:-google}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # Must equal a redirect URI registered on the OAuth client byte-for-byte.
+      OAUTH_REDIRECT_URI: ${OAUTH_REDIRECT_URI:-}
+      # Only a plain-http local smoke test should set this to 0.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-1}
+      TZ: ${TZ:-Europe/Kyiv}
+    volumes:
+      - data:/var/www/html/data                 # db.sqlite — the live org chart
+      - avatars:/var/www/html/uploads/avatars   # employee photos, re-encoded to webp
+    networks:
+      - dokploy-network
+
+volumes:
+  data:
+  avatars:
+
+networks:
+  dokploy-network:
+    external: true             # locally: docker network create dokploy-network
