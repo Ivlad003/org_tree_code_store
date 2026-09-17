@@ -25,12 +25,19 @@ echo "session.cookie_secure=${SESSION_COOKIE_SECURE:-1}" \
 # an edited environment variable silently does nothing until someone happens to
 # rebuild, and a config change that appears to apply but doesn't is the worst kind.
 umask 027
+# printenv, not eval: the expansion was safe (a parameter's value is not re-scanned
+# for command substitution) but a value containing a newline still wrote a second,
+# attacker-chosen line into .env — e.g. a password ending in "\nVIEWER_AUTH=open"
+# would have published the chart. Values with a newline are refused outright.
 for name in ADMIN_EMAIL ADMIN_PASSWORD VIEWER_AUTH \
             GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET OAUTH_REDIRECT_URI; do
-    eval "value=\${$name:-}"
-    if [ -n "$value" ]; then
-        echo "$name=$value"
+    value=$(printenv "$name" || true)
+    [ -n "$value" ] || continue
+    if [ "$(printf '%s' "$value" | wc -l)" -ne 0 ]; then
+        echo "ERROR: $name contains a newline; refusing to write .env" >&2
+        exit 1
     fi
+    printf '%s=%s\n' "$name" "$value"
 done > .env
 chown root:www-data .env
 

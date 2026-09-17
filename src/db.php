@@ -302,6 +302,14 @@ function detachTarget(int $id, string $table): ?int {
         if ($kids > 0) {
             throw new ValidationError('This is the top node of the chart. Move or delete its children first.');
         }
+        // Childless root: allowed only when it is the last node left, so deleting it
+        // clears an already-empty chart rather than wiping a populated one.
+        $others = (int)db()->query("
+            SELECT (SELECT COUNT(*) FROM departments) + (SELECT COUNT(*) FROM employees)
+        ")->fetchColumn();
+        if ($others > 1) {
+            throw new ValidationError('This is the top node of the chart. Give the chart another top node first.');
+        }
     }
     return $parent;
 }
