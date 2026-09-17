@@ -104,7 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $id = (int)($_POST['id'] ?? 0);
                 if ($id > 0) {
                     deleteDepartment($id);
-                    setFlash('ok', 'Department deleted (its members were detached, not deleted).');
+                    setFlash('ok', 'Department deleted. Its members moved up to its parent.');
             }
                 redirect('admin.php#departments');
         }
@@ -377,7 +377,7 @@ $employees = getEmployees();
             </form>
 
             <?php if (!$isNew): ?>
-                <form id="delete-department-form" method="post" data-confirm="Delete this department? Members will be detached, not deleted.">
+                <form id="delete-department-form" method="post" data-confirm="Delete this department? Its members move up to its parent.">
                     <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                     <input type="hidden" name="action" value="delete_department">
                     <input type="hidden" name="id" value="<?= escapeHtml((string)$editDepartment['id']) ?>">
@@ -482,7 +482,7 @@ $employees = getEmployees();
                         <td><?= (int)$d['sort_order'] ?></td>
                         <td class="row-actions">
                             <a href="admin.php?dept_edit=<?= (int)$d['id'] ?>">edit</a>
-                            <form method="post" data-confirm="Delete department <?= escapeHtml($d['name']) ?>? Members will be detached.">
+                            <form method="post" data-confirm="Delete department <?= escapeHtml($d['name']) ?>? Its members move up to its parent.">
                                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                                 <input type="hidden" name="action" value="delete_department">
                                 <input type="hidden" name="id" value="<?= (int)$d['id'] ?>">

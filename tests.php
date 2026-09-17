@@ -71,13 +71,44 @@ check('every node reaches the single root', function () {
     $map = parentMap();
     $roots = array_keys(array_filter($map, fn($p) => $p === null));
     if (count($roots) !== 1) throw new RuntimeException('roots: ' . count($roots));
+    $root = $roots[0];
     foreach (array_keys($map) as $id) {
         $seen = [];
-        for ($cur = $id; $cur !== null; $cur = $map[$cur] ?? null) {
+        $cur  = $id;
+        while (true) {
             if (isset($seen[$cur])) throw new RuntimeException("cycle at {$id}");
             $seen[$cur] = true;
+            // A parent id that is not a key is an orphan, not the top of the chain:
+            // `$map[$cur] ?? null` used to end the walk there and call it a pass.
+            if (!array_key_exists($cur, $map)) {
+                throw new RuntimeException("node {$id} reaches missing parent {$cur}");
+            }
+            $next = $map[$cur];
+            if ($next === null) break;      // reached a root
+            $cur = $next;
+        }
+        if ($cur !== $root) throw new RuntimeException("node {$id} lands on {$cur}, not the root {$root}");
+    }
+});
+
+check('an orphan parent is caught by the walk above', function () {
+    // Prove the check has teeth: plant a dangling parent behind the validation.
+    $id = saveEmployee(['first_name' => 'Orphan', 'parent_id' => (string)currentRootId()]);
+    db()->prepare('UPDATE employees SET parent_id = 999999 WHERE id = ?')->execute([$id]);
+    $map = parentMap();
+    $caught = false;
+    foreach (array_keys($map) as $n) {
+        $cur = $n; $seen = [];
+        while (true) {
+            if (isset($seen[$cur]) || !array_key_exists($cur, $map)) { $caught = $caught || !array_key_exists($cur, $map); break; }
+            $seen[$cur] = true;
+            $next = $map[$cur];
+            if ($next === null) break;
+            $cur = $next;
         }
     }
+    db()->prepare('DELETE FROM employees WHERE id = ?')->execute([$id]);
+    if (!$caught) throw new RuntimeException('an orphan parent went undetected');
 });
 
 echo "\n{$pass} passed, {$fail} failed\n";
