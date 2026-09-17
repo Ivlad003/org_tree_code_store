@@ -25,6 +25,15 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'login') {
+        // Throttle guessing: a shared password with no backoff is a free brute-force
+        // target. Per-session, so it slows a browser attack but not a cookie-less
+        // script — a real fix needs a shared store.
+        // ponytail: per-session counter, move to IP//store-backed if abuse shows up.
+        $fails = (int)($_SESSION['login_fails'] ?? 0);
+        if ($fails >= 5 && (time() - (int)($_SESSION['login_last_fail'] ?? 0)) < 60) {
+            setFlash('err', 'Too many failed attempts. Wait a minute and try again.');
+            redirect('admin.php');
+        }
         $expectedEmail = $_ENV['ADMIN_EMAIL'] ?? '';
         $expectedPass  = $_ENV['ADMIN_PASSWORD'] ?? '';
         $suppliedEmail = is_string($_POST['email'] ?? null) ? trim($_POST['email']) : '';
@@ -36,8 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($emailOk && $passOk) {
             session_regenerate_id(true);
             $_SESSION['admin'] = true;
+            unset($_SESSION['login_fails'], $_SESSION['login_last_fail']);
             redirect('admin.php');
         }
+        $_SESSION['login_fails']     = $fails + 1;
+        $_SESSION['login_last_fail'] = time();
         setFlash('err', 'Wrong email or password.');
         redirect('admin.php');
     }
@@ -46,44 +58,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     requireAdmin();
     checkCsrf();
 
-    switch ($action) {
-        case 'logout':
-            $_SESSION = [];
-            session_destroy();
-            redirect('admin.php');
+    // Validation rejections are user errors, not crashes: show the message and
+    // send the admin back to the form with their input intact.
+    try {
+        switch ($action) {
+            case 'logout':
+                $_SESSION = [];
+                session_destroy();
+                redirect('admin.php');
 
-        case 'save_employee':
-            $wasNew = empty($_POST['id']);
-            $id = saveEmployee($_POST);
-            // Optional photo submitted with the form (create flow needs the new id first).
-            $avatarErr = storeAvatarUpload($id, $_FILES['avatar'] ?? []);
-            if ($avatarErr !== null) {
-                setFlash('err', ($wasNew ? 'Employee created, but photo upload failed: ' : 'Saved, but photo upload failed: ') . $avatarErr);
-            } else {
-                setFlash('ok', $wasNew ? 'Employee created.' : 'Employee updated.');
+            case 'save_employee':
+                $wasNew = empty($_POST['id']);
+                $id = saveEmployee($_POST);
+                // Optional photo submitted with the form (create flow needs the new id first).
+                $avatarErr = storeAvatarUpload($id, $_FILES['avatar'] ?? []);
+                if ($avatarErr !== null) {
+                    setFlash('err', ($wasNew ? 'Employee created, but photo upload failed: ' : 'Saved, but photo upload failed: ') . $avatarErr);
+                } else {
+                    setFlash('ok', $wasNew ? 'Employee created.' : 'Employee updated.');
             }
-            redirect('admin.php?edit=' . $id);
+                redirect('admin.php?edit=' . $id);
 
-        case 'delete_employee':
-            $id = (int)($_POST['id'] ?? 0);
-            if ($id > 0) {
-                deleteEmployee($id);
-                setFlash('ok', 'Employee deleted.');
+            case 'delete_employee':
+                $id = (int)($_POST['id'] ?? 0);
+                if ($id > 0) {
+                    deleteEmployee($id);
+                    setFlash('ok', 'Employee deleted.');
             }
-            redirect('admin.php');
+                redirect('admin.php');
 
-        case 'save_department':
-            $id = saveDepartment($_POST);
-            setFlash('ok', !empty($_POST['id']) ? 'Department updated.' : 'Department created.');
-            redirect('admin.php#departments');
+            case 'save_department':
+                $id = saveDepartment($_POST);
+                setFlash('ok', !empty($_POST['id']) ? 'Department updated.' : 'Department created.');
+                redirect('admin.php#departments');
 
-        case 'delete_department':
-            $id = (int)($_POST['id'] ?? 0);
-            if ($id > 0) {
-                deleteDepartment($id);
-                setFlash('ok', 'Department deleted (its members were detached, not deleted).');
+            case 'delete_department':
+                $id = (int)($_POST['id'] ?? 0);
+                if ($id > 0) {
+                    deleteDepartment($id);
+                    setFlash('ok', 'Department deleted (its members were detached, not deleted).');
             }
-            redirect('admin.php#departments');
+                redirect('admin.php#departments');
+        }
+    } catch (ValidationError $e) {
+        setFlash('err', $e->getMessage());
+        // return_to is user input heading into a Location: header — allow only a
+        // relative admin.php URL, never an absolute one (open redirect).
+        $back = (string)($_POST['return_to'] ?? '');
+        redirect(preg_match('~^admin\.php(\?[\w=&]*)?$~', $back) ? $back : 'admin.php');
     }
     redirect('admin.php');
 }
@@ -97,7 +119,8 @@ if (!isAdmin()) {
         <meta charset="UTF-8">
         <title>Admin · code.store org chart</title>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-        <link rel="stylesheet" href="assets/css/admin.css">
+        <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/css/admin.css">
     </head>
     <body>
     <div class="login-wrap">
@@ -159,6 +182,7 @@ $employees = getEmployees();
     <meta charset="UTF-8">
     <title>Admin · code.store org chart</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="assets/css/admin.css">
 </head>
 <body>
@@ -183,7 +207,7 @@ $employees = getEmployees();
     <?php if ($view === 'employee_form'): ?>
         <?php
             $isNew = empty($editEmployee['id']);
-            $hasAvatar = !empty($editEmployee['avatar_path']);
+            $hasAvatar = avatarUrl($editEmployee) !== '';
         ?>
         <div class="card">
             <h2><?= $isNew ? 'New employee' : 'Edit employee #' . escapeHtml((string)$editEmployee['id']) ?></h2>
@@ -218,6 +242,7 @@ $employees = getEmployees();
                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                 <input type="hidden" name="action" value="save_employee">
                 <input type="hidden" name="id" value="<?= escapeHtml((string)$editEmployee['id']) ?>">
+                <input type="hidden" name="return_to" value="<?= $isNew ? 'admin.php?new=1' : 'admin.php?edit=' . (int)$editEmployee['id'] ?>">
 
                 <?php if ($isNew): ?>
                     <div class="avatar-block">
@@ -280,15 +305,22 @@ $employees = getEmployees();
                     <button type="submit"><?= $isNew ? 'Create employee' : 'Save changes' ?></button>
                     <a class="btn secondary" href="admin.php">Cancel</a>
                     <?php if (!$isNew): ?>
-                        <form method="post" style="margin:0 0 0 auto" onsubmit="return confirm('Delete this employee? This cannot be undone.');">
-                            <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
-                            <input type="hidden" name="action" value="delete_employee">
-                            <input type="hidden" name="id" value="<?= escapeHtml((string)$editEmployee['id']) ?>">
-                            <button type="submit" class="danger">Delete</button>
-                        </form>
+                        <!-- Submits the sibling form below via form=. A <form> nested inside
+                             another is dropped by the HTML parser, which leaves its hidden
+                             action=delete_employee inside the save form — and PHP takes the
+                             LAST duplicate key, so "Save" silently deleted the employee. -->
+                        <button type="submit" form="delete-employee-form" class="danger" style="margin:0 0 0 auto">Delete</button>
                     <?php endif; ?>
                 </div>
             </form>
+
+            <?php if (!$isNew): ?>
+                <form id="delete-employee-form" method="post" data-confirm="Delete this employee? This cannot be undone.">
+                    <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
+                    <input type="hidden" name="action" value="delete_employee">
+                    <input type="hidden" name="id" value="<?= escapeHtml((string)$editEmployee['id']) ?>">
+                </form>
+            <?php endif; ?>
         </div>
 
     <?php elseif ($view === 'department_form'): ?>
@@ -299,6 +331,7 @@ $employees = getEmployees();
                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                 <input type="hidden" name="action" value="save_department">
                 <input type="hidden" name="id" value="<?= escapeHtml((string)$editDepartment['id']) ?>">
+                <input type="hidden" name="return_to" value="<?= $isNew ? 'admin.php?dept_new=1' : 'admin.php?dept_edit=' . (int)$editDepartment['id'] ?>">
 
                 <div class="form-row">
                     <div class="field">
@@ -327,15 +360,18 @@ $employees = getEmployees();
                     <button type="submit"><?= $isNew ? 'Create department' : 'Save changes' ?></button>
                     <a class="btn secondary" href="admin.php">Cancel</a>
                     <?php if (!$isNew): ?>
-                        <form method="post" style="margin:0 0 0 auto" onsubmit="return confirm('Delete this department? Members will be detached, not deleted.');">
-                            <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
-                            <input type="hidden" name="action" value="delete_department">
-                            <input type="hidden" name="id" value="<?= escapeHtml((string)$editDepartment['id']) ?>">
-                            <button type="submit" class="danger">Delete</button>
-                        </form>
+                        <button type="submit" form="delete-department-form" class="danger" style="margin:0 0 0 auto">Delete</button>
                     <?php endif; ?>
                 </div>
             </form>
+
+            <?php if (!$isNew): ?>
+                <form id="delete-department-form" method="post" data-confirm="Delete this department? Members will be detached, not deleted.">
+                    <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
+                    <input type="hidden" name="action" value="delete_department">
+                    <input type="hidden" name="id" value="<?= escapeHtml((string)$editDepartment['id']) ?>">
+                </form>
+            <?php endif; ?>
         </div>
 
     <?php else: /* list view */ ?>
@@ -379,7 +415,7 @@ $employees = getEmployees();
                 ?>
                     <tr data-name="<?= escapeHtml(strtolower($full)) ?>" data-dept="<?= escapeHtml($dept) ?>">
                         <td>
-                            <?php if (!empty($e['avatar_path'])): ?>
+                            <?php if (avatarUrl($e) !== ''): ?>
                                 <img class="thumb" src="avatar.php?id=<?= (int)$e['id'] ?>" alt="">
                             <?php else: ?>
                                 <span class="thumb placeholder">—</span>
@@ -394,7 +430,7 @@ $employees = getEmployees();
                         </td>
                         <td class="row-actions">
                             <a href="admin.php?edit=<?= (int)$e['id'] ?>">edit</a>
-                            <form method="post" onsubmit="return confirm('Delete <?= escapeHtml($full) ?>?');">
+                            <form method="post" data-confirm="Delete <?= escapeHtml($full ?: 'this employee') ?>?">
                                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                                 <input type="hidden" name="action" value="delete_employee">
                                 <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
@@ -435,7 +471,7 @@ $employees = getEmployees();
                         <td><?= (int)$d['sort_order'] ?></td>
                         <td class="row-actions">
                             <a href="admin.php?dept_edit=<?= (int)$d['id'] ?>">edit</a>
-                            <form method="post" onsubmit="return confirm('Delete department <?= escapeHtml($d['name']) ?>? Members will be detached.');">
+                            <form method="post" data-confirm="Delete department <?= escapeHtml($d['name']) ?>? Members will be detached.">
                                 <input type="hidden" name="csrf" value="<?= escapeHtml($csrf) ?>">
                                 <input type="hidden" name="action" value="delete_department">
                                 <input type="hidden" name="id" value="<?= (int)$d['id'] ?>">
@@ -469,5 +505,16 @@ $employees = getEmployees();
     <?php endif; ?>
 
 </div>
+
+<script>
+    // Confirm prompts read their text from data-confirm. An inline
+    // onsubmit="confirm('…')" breaks on a name with an apostrophe (O'Brien):
+    // escapeHtml emits &#039;, the browser decodes it before parsing the JS,
+    // the handler throws, and the row deletes with no prompt at all.
+    document.addEventListener('submit', e => {
+        const msg = e.target.dataset?.confirm;
+        if (msg && !confirm(msg)) e.preventDefault();
+    });
+</script>
 </body>
 </html>
