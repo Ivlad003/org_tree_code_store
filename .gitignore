@@ -1,5 +1,7 @@
 # MCP configuration (contains local settings)
 .mcp.json
+.claude
+.codex
 
 # OS files
 .DS_Store
@@ -20,3 +22,11 @@ DATA_MISMATCH_REPORT.md
 DATA_MISMATCH_REPORT_UA.md
 staff.json
 files.json
+
+# Admin panel runtime state
+.env
+data/*
+!data/.gitkeep
+!data/org_struct_code_store.csv
+uploads/avatars/*
+!uploads/avatars/.gitkeep

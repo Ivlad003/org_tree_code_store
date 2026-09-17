@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env
+
+# Runtime state lives on volumes, never in the image. The seed CSV is deliberately
+# NOT excluded — the entrypoint needs it to populate an empty database.
+data/db.sqlite
+data/db.sqlite-*
+uploads/avatars/*.webp
+
+# Documentation and agent scratch space add build context for nothing.
+docs
+_

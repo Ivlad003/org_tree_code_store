@@ -1,0 +1,12 @@
+# Apache config for the document root. Deployment target is nginx; this is a
+# fallback for Apache hosts pointing their docroot at public/.
+#
+# Sensitive files (src/db.php, .env, data/, uploads/) live OUTSIDE this docroot,
+# so they're already unreachable over HTTP. We only defensively deny dotfiles
+# that might appear here.
+
+DirectoryIndex index.php
+
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
