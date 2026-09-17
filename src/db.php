@@ -11,7 +11,7 @@ function projectRoot(): string {
     return dirname(__DIR__);
 }
 
-function loadEnv(string $path = null): void {
+function loadEnv(?string $path = null): void {
     static $loaded = false;
     if ($loaded) return;
     $loaded = true;
@@ -88,6 +88,9 @@ function getTree(): array {
         $rows[] = [
             'id' => (string)$d['id'],
             'parentId' => $d['parent_id'] !== null ? (string)$d['parent_id'] : '',
+            // The client used to guess "is this a department?" from a hardcoded list
+            // of names, so every new department rendered as a person. Say it outright.
+            'type' => 'dept',
             'first_name' => $d['name'],
             'last_name' => '',
             'department_name' => $d['name'],
@@ -102,16 +105,93 @@ function getTree(): array {
         $rows[] = [
             'id' => (string)$e['id'],
             'parentId' => $e['parent_id'] !== null ? (string)$e['parent_id'] : '',
+            'type' => 'person',
             'first_name' => $e['first_name'] ?? '',
             'last_name' => $e['last_name'] ?? '',
             'department_name' => $e['department_name'] ?? '',
             // Avatars are served through avatar.php (viewer-gated), never the raw path.
-            'img_url' => !empty($e['avatar_path']) ? 'avatar.php?id=' . (int)$e['id'] : '',
+            // Check the file exists: a DB row whose file is gone (restored backup,
+            // lost volume) otherwise emits an <img> that 404s on every page load.
+            'img_url' => avatarUrl($e),
             'linkedin_url' => $e['linkedin_url'] ?? '',
             'description' => $e['description'] ?? '',
         ];
     }
     return $rows;
+}
+
+// Avatar URL for a row, or '' when the file is missing on disk.
+function avatarUrl(array $employee): string {
+    if (empty($employee['avatar_path'])) return '';
+    $disk = projectRoot() . '/' . ltrim((string)$employee['avatar_path'], '/');
+    return is_file($disk) ? 'avatar.php?id=' . (int)$employee['id'] : '';
+}
+
+// ── Validation ───────────────────────────────────────────────────────────────
+// The chart is a strict tree: d3-org-chart throws "multiple roots" / "no root" and
+// renders NOTHING if the data has two roots or a cycle. Both are one click away in
+// the admin UI ("— none (root) —" is the default parent option), so the rules are
+// enforced here, where every caller routes through, rather than per form.
+
+class ValidationError extends RuntimeException {}
+
+// Node ids are unique across both tables (employees start at EMPLOYEE_ID_OFFSET),
+// so a single id → parent_id map describes the whole tree.
+function parentMap(): array {
+    $pdo = db();
+    $map = [];
+    foreach ($pdo->query("SELECT id, parent_id FROM departments")->fetchAll() as $r) {
+        $map[(int)$r['id']] = $r['parent_id'] !== null ? (int)$r['parent_id'] : null;
+    }
+    foreach ($pdo->query("SELECT id, parent_id FROM employees")->fetchAll() as $r) {
+        $map[(int)$r['id']] = $r['parent_id'] !== null ? (int)$r['parent_id'] : null;
+    }
+    return $map;
+}
+
+function currentRootId(): ?int {
+    foreach (parentMap() as $id => $parent) {
+        if ($parent === null) return $id;
+    }
+    return null;
+}
+
+// Validates the parent a save is about to write. $selfId is null when creating.
+// Returns the parent id to persist (never an invalid one) or throws.
+function validateParent(?int $parentId, ?int $selfId): ?int {
+    $map  = parentMap();
+    $root = currentRootId();
+
+    if ($parentId === null) {
+        // Only the existing root may stay parentless; anything else would be a
+        // second root and would blank the chart for everyone.
+        if ($root === null || ($selfId !== null && $selfId === $root)) return null;
+        throw new ValidationError('The chart already has a root node. Pick a parent — only one node can sit at the top.');
+    }
+    if (!array_key_exists($parentId, $map)) {
+        throw new ValidationError('That parent does not exist (it may have just been deleted).');
+    }
+    if ($selfId !== null) {
+        if ($parentId === $selfId) {
+            throw new ValidationError('A node cannot be its own parent.');
+        }
+        // Walk up from the chosen parent: meeting $selfId means we would close a loop.
+        $seen = [];
+        for ($cur = $parentId; $cur !== null; $cur = $map[$cur] ?? null) {
+            if ($cur === $selfId) {
+                throw new ValidationError('That parent sits below this node — it would create a loop.');
+            }
+            if (isset($seen[$cur])) break;   // pre-existing loop; don't spin
+            $seen[$cur] = true;
+        }
+    }
+    return $parentId;
+}
+
+function requireNonEmpty(string $value, string $label): string {
+    $value = trim($value);
+    if ($value === '') throw new ValidationError($label . ' is required.');
+    return $value;
 }
 
 // ── Department CRUD ──────────────────────────────────────────────────────────
@@ -129,33 +209,59 @@ function getDepartment(int $id): ?array {
 
 function saveDepartment(array $data): int {
     $pdo = db();
-    $parentId = $data['parent_id'] !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
+    $selfId    = !empty($data['id']) ? (int)$data['id'] : null;
+    $parentId  = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
+    $parentId  = validateParent($parentId, $selfId);
+    $name      = requireNonEmpty((string)($data['name'] ?? ''), 'Department name');
     $sortOrder = (int)($data['sort_order'] ?? 0);
 
     if (!empty($data['id'])) {
         $stmt = $pdo->prepare("UPDATE departments SET parent_id = ?, name = ?, sort_order = ? WHERE id = ?");
-        $stmt->execute([$parentId, $data['name'], $sortOrder, (int)$data['id']]);
+        $stmt->execute([$parentId, $name, $sortOrder, (int)$data['id']]);
         return (int)$data['id'];
     }
     $stmt = $pdo->prepare("INSERT INTO departments (parent_id, name, sort_order) VALUES (?, ?, ?)");
-    $stmt->execute([$parentId, $data['name'], $sortOrder]);
+    $stmt->execute([$parentId, $name, $sortOrder]);
     return (int)$pdo->lastInsertId();
 }
 
 function deleteDepartment(int $id): void {
     $pdo = db();
+    // Re-parenting children to NULL turned every one of them into a root and blanked
+    // the chart. Promote them to this node's parent instead, so the tree stays whole.
+    $grandparent = detachTarget($id, 'departments');
+
     $pdo->beginTransaction();
     try {
-        // Detach employees that pointed at this dept
-        $pdo->prepare("UPDATE employees SET parent_id = NULL WHERE parent_id = ?")->execute([$id]);
-        // Detach child departments
-        $pdo->prepare("UPDATE departments SET parent_id = NULL WHERE parent_id = ?")->execute([$id]);
+        $pdo->prepare("UPDATE employees SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
+        $pdo->prepare("UPDATE departments SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
         $pdo->prepare("DELETE FROM departments WHERE id = ?")->execute([$id]);
         $pdo->commit();
     } catch (Throwable $e) {
         $pdo->rollBack();
         throw $e;
     }
+}
+
+// Where a deleted node's children should go: its own parent. Deleting the root is
+// refused while it still has children — there would be no single node left on top.
+function detachTarget(int $id, string $table): ?int {
+    $stmt = db()->prepare("SELECT parent_id FROM {$table} WHERE id = ?");
+    $stmt->execute([$id]);
+    $row = $stmt->fetch();
+    if ($row === false) throw new ValidationError('That record no longer exists.');
+
+    $parent = $row['parent_id'] !== null ? (int)$row['parent_id'] : null;
+    if ($parent === null) {
+        $kids = (int)db()->query("
+            SELECT (SELECT COUNT(*) FROM departments WHERE parent_id = {$id})
+                 + (SELECT COUNT(*) FROM employees   WHERE parent_id = {$id})
+        ")->fetchColumn();
+        if ($kids > 0) {
+            throw new ValidationError('This is the top node of the chart. Move or delete its children first.');
+        }
+    }
+    return $parent;
 }
 
 // ── Employee CRUD ────────────────────────────────────────────────────────────
@@ -180,10 +286,13 @@ function getEmployee(int $id): ?array {
 
 function saveEmployee(array $data): int {
     $pdo = db();
-    $parentId = $data['parent_id'] !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
+    $selfId    = !empty($data['id']) ? (int)$data['id'] : null;
+    $parentId  = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
+    $parentId  = validateParent($parentId, $selfId);
+    $firstName = requireNonEmpty((string)($data['first_name'] ?? ''), 'First name');
     $payload = [
         $parentId,
-        trim($data['first_name'] ?? ''),
+        $firstName,
         trim($data['last_name'] ?? '') ?: null,
         trim($data['department_name'] ?? '') ?: null,
         trim($data['linkedin_url'] ?? '') ?: null,
@@ -211,10 +320,13 @@ function saveEmployee(array $data): int {
 
 function deleteEmployee(int $id): void {
     $pdo = db();
+    $grandparent = detachTarget($id, 'employees');
+
     $pdo->beginTransaction();
     try {
-        // Re-parent any employees that pointed at this one
-        $pdo->prepare("UPDATE employees SET parent_id = NULL WHERE parent_id = ?")->execute([$id]);
+        // Promote reports to this employee's own manager, not to root (see deleteDepartment).
+        $pdo->prepare("UPDATE employees SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
+        $pdo->prepare("UPDATE departments SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
 
         // Drop avatar file from disk
         $stmt = $pdo->prepare("SELECT avatar_path FROM employees WHERE id = ?");
