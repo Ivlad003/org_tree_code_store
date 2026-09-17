@@ -118,9 +118,12 @@ $viewer = viewerEmail();
                 <?= $loggedIn ? 'ADMIN' : 'SIGN IN' ?>
             </a>
             <?php if ($viewer && !$loggedIn): ?>
-                <a class="zoom-btn" href="auth_google.php?action=signout" title="Sign out (<?= escapeHtml($viewer) ?>)" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;text-decoration:none;display:inline-flex;align-items:center;">
-                    SIGN OUT
-                </a>
+                <form method="post" action="auth_google.php?action=signout" style="display:inline;margin:0">
+                    <input type="hidden" name="csrf" value="<?= escapeHtml(csrfToken()) ?>">
+                    <button type="submit" class="zoom-btn" title="Sign out (<?= escapeHtml($viewer) ?>)" style="width:auto;padding:0 8px;font-size:11px;letter-spacing:.03em;">
+                        SIGN OUT
+                    </button>
+                </form>
             <?php endif; ?>
         </div>
     </header>
@@ -168,9 +171,14 @@ $viewer = viewerEmail();
     // and the chart never renders. (Hence no such tag in this comment either.)
     window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 </script>
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3"></script>
-<script src="https://cdn.jsdelivr.net/npm/d3-flextree@2.1.2/build/d3-flextree.js"></script>
+<!-- Pinned to exact versions with SRI. @3 floated: a new 3.x would ship silently,
+     and with SRI a floating tag would break the chart the day it moved. -->
+<script src="https://d3js.org/d3.v7.min.js"
+        integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3.1.1/build/d3-org-chart.js"
+        integrity="sha384-Spi6Wpw0KD3XtOrFTKxq2+d+5V/HXiEvFnUkF7sFwHEdi2G+Ux0HLUlPzxsn2rZ/" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-flextree@2.1.2/build/d3-flextree.js"
+        integrity="sha384-6pTgblH+kfP7e8kLkJxI96n+G6MCr28XHUtlXyr3cSjSyT/co6eOBwwCPAX8pBb5" crossorigin="anonymous"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
