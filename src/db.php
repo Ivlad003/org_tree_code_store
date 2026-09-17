@@ -188,6 +188,19 @@ function validateParent(?int $parentId, ?int $selfId): ?int {
     return $parentId;
 }
 
+// Only http(s) links are storable. escapeHtml() does not neutralise a
+// javascript: URL — it survives into href= intact — and the client-side
+// isValidUrl() check only guards the chart, not the admin list.
+function sanitizeUrl(string $url): ?string {
+    $url = trim($url);
+    if ($url === '') return null;
+    $scheme = strtolower((string)parse_url($url, PHP_URL_SCHEME));
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        throw new ValidationError('The LinkedIn URL must start with http:// or https://');
+    }
+    return $url;
+}
+
 function requireNonEmpty(string $value, string $label): string {
     $value = trim($value);
     if ($value === '') throw new ValidationError($label . ' is required.');
@@ -295,7 +308,7 @@ function saveEmployee(array $data): int {
         $firstName,
         trim($data['last_name'] ?? '') ?: null,
         trim($data['department_name'] ?? '') ?: null,
-        trim($data['linkedin_url'] ?? '') ?: null,
+        sanitizeUrl((string)($data['linkedin_url'] ?? '')),
         trim($data['description'] ?? '') ?: null,
     ];
 
@@ -490,8 +503,12 @@ function csrfToken(): string {
 
 function checkCsrf(): void {
     startSession();
-    $token = $_POST['csrf'] ?? '';
-    if (!is_string($token) || !hash_equals($_SESSION['csrf'] ?? '', $token)) {
+    $expected = $_SESSION['csrf'] ?? '';
+    $token    = $_POST['csrf'] ?? '';
+    // hash_equals('', '') is true, so a session that has never minted a token
+    // accepted a POST carrying no token at all. Require both sides to be present.
+    if (!is_string($expected) || $expected === '' || !is_string($token) || $token === ''
+        || !hash_equals($expected, $token)) {
         http_response_code(403);
         exit('CSRF token mismatch');
     }

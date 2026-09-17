@@ -46,8 +46,17 @@ function decodeJwtPayload(string $jwt): ?array {
 $action = $_GET['action'] ?? '';
 
 // ── Sign out ─────────────────────────────────────────────────────────────────
+// POST + CSRF, matching the admin logout. As a GET this was forgeable: SameSite=Lax
+// still sends the cookie on a top-level cross-site navigation, so any page could
+// sign a viewer out by pointing them at ?action=signout.
 if ($action === 'signout') {
-    unset($_SESSION['viewer_email'], $_SESSION['viewer_name'], $_SESSION['viewer_login_at']);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        exit('POST only');
+    }
+    checkCsrf();
+    $_SESSION = [];
+    session_destroy();
     oauthRedirect('index.php');
 }
 
