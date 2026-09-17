@@ -17,7 +17,8 @@ if (!isViewer()) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>code.store — Team</title>
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-        <link rel="stylesheet" href="assets/css/admin.css">
+        <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="assets/css/admin.css">
     </head>
     <body>
     <div class="login-wrap">
@@ -53,6 +54,7 @@ $viewer = viewerEmail();
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
@@ -161,7 +163,10 @@ $viewer = viewerEmail();
 </div>
 
 <script>
-    window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    // JSON_HEX_TAG is load-bearing: without it a name containing a literal
+    // closing script tag ends this block early — stored XSS for every viewer,
+    // and the chart never renders. (Hence no such tag in this comment either.)
+    window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 </script>
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3-org-chart@3"></script>
