@@ -29,7 +29,7 @@ RUN { \
 # siblings, so they are unreachable over HTTP by construction rather than by a
 # deny-list. Widening this document root silently un-protects the whole dataset.
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
-RUN a2enmod rewrite \
+RUN a2enmod rewrite headers \
  && echo 'ServerName localhost' > /etc/apache2/conf-available/servername.conf \
  && a2enconf servername
 
