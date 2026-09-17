@@ -10,6 +10,14 @@ startSession();
 $flash = $_SESSION['flash'] ?? null;
 unset($_SESSION['flash']);
 
+// Values from a save the server rejected, replayed into the form once.
+$old = $_SESSION['form_old'] ?? [];
+unset($_SESSION['form_old']);
+function oldValue(string $field, $fallback = '') {
+    global $old;
+    return array_key_exists($field, $old) && is_string($old[$field]) ? $old[$field] : $fallback;
+}
+
 function setFlash(string $type, string $message): void {
     $_SESSION['flash'] = ['type' => $type, 'message' => $message];
 }
@@ -102,6 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } catch (ValidationError $e) {
         setFlash('err', $e->getMessage());
+        // Keep what they typed: the redirect below re-renders an empty form, so a
+        // rejected save used to cost the admin every keystroke.
+        $_SESSION['form_old'] = array_diff_key($_POST, array_flip(['csrf', 'action', 'return_to']));
         // return_to is user input heading into a Location: header — allow only a
         // relative admin.php URL, never an absolute one (open redirect).
         $back = (string)($_POST['return_to'] ?? '');
@@ -259,18 +270,18 @@ $employees = getEmployees();
                 <div class="form-row">
                     <div class="field">
                         <label for="first_name">First name *</label>
-                        <input type="text" id="first_name" name="first_name" required value="<?= escapeHtml($editEmployee['first_name'] ?? '') ?>">
+                        <input type="text" id="first_name" name="first_name" required value="<?= escapeHtml(oldValue('first_name', $editEmployee['first_name'] ?? '')) ?>">
                     </div>
                     <div class="field">
                         <label for="last_name">Last name</label>
-                        <input type="text" id="last_name" name="last_name" value="<?= escapeHtml($editEmployee['last_name'] ?? '') ?>">
+                        <input type="text" id="last_name" name="last_name" value="<?= escapeHtml(oldValue('last_name', $editEmployee['last_name'] ?? '')) ?>">
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="field">
                         <label for="department_name">Department / role (shown on card)</label>
-                        <input type="text" id="department_name" name="department_name" list="dept-suggestions" value="<?= escapeHtml($editEmployee['department_name'] ?? '') ?>">
+                        <input type="text" id="department_name" name="department_name" list="dept-suggestions" value="<?= escapeHtml(oldValue('department_name', $editEmployee['department_name'] ?? '')) ?>">
                         <datalist id="dept-suggestions">
                             <?php foreach ($departments as $d): ?>
                                 <option value="<?= escapeHtml($d['name']) ?>">
@@ -293,12 +304,12 @@ $employees = getEmployees();
 
                 <div class="field">
                     <label for="linkedin_url">LinkedIn URL</label>
-                    <input type="url" id="linkedin_url" name="linkedin_url" placeholder="https://www.linkedin.com/in/…" value="<?= escapeHtml($editEmployee['linkedin_url'] ?? '') ?>">
+                    <input type="url" id="linkedin_url" name="linkedin_url" placeholder="https://www.linkedin.com/in/…" value="<?= escapeHtml(oldValue('linkedin_url', $editEmployee['linkedin_url'] ?? '')) ?>">
                 </div>
 
                 <div class="field">
                     <label for="description">Description / bio</label>
-                    <textarea id="description" name="description"><?= escapeHtml($editEmployee['description'] ?? '') ?></textarea>
+                    <textarea id="description" name="description"><?= escapeHtml(oldValue('description', $editEmployee['description'] ?? '')) ?></textarea>
                 </div>
 
                 <div class="actions">
@@ -336,7 +347,7 @@ $employees = getEmployees();
                 <div class="form-row">
                     <div class="field">
                         <label for="dname">Name *</label>
-                        <input type="text" id="dname" name="name" required value="<?= escapeHtml($editDepartment['name'] ?? '') ?>">
+                        <input type="text" id="dname" name="name" required value="<?= escapeHtml(oldValue('name', $editDepartment['name'] ?? '')) ?>">
                     </div>
                     <div class="field">
                         <label for="dparent">Parent node</label>

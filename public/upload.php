@@ -53,8 +53,12 @@ if (!empty($_POST['remove_avatar'])) {
     exit;
 }
 
-// Handle file upload (skip silently if nothing was uploaded)
-if (empty($_FILES['avatar']['tmp_name'])) {
+// Skip silently only when no file was chosen. A file that PHP itself rejected
+// (over upload_max_filesize) also arrives with an empty tmp_name but carries an
+// error code — reporting that as "nothing happened" is how a 3 MB photo failed
+// with no message while the form advertised a 5 MB limit.
+$uploadErr = $_FILES['avatar']['error'] ?? UPLOAD_ERR_NO_FILE;
+if ($uploadErr === UPLOAD_ERR_NO_FILE) {
     header('Location: ' . $redirect);
     exit;
 }

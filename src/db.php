@@ -396,8 +396,12 @@ function setEmployeeAvatar(int $id, ?string $path): void {
 // Shared by upload.php (edit form) and admin.php save_employee (create form).
 function storeAvatarUpload(int $id, array $file): ?string {
     $err = $file['error'] ?? UPLOAD_ERR_NO_FILE;
-    if ($err === UPLOAD_ERR_NO_FILE || empty($file['tmp_name'])) {
-        return null; // nothing uploaded — not an error
+    if ($err === UPLOAD_ERR_NO_FILE) {
+        return null; // nothing chosen — not an error
+    }
+    if ($err === UPLOAD_ERR_INI_SIZE || $err === UPLOAD_ERR_FORM_SIZE) {
+        return 'That photo is larger than the server allows ('
+             . ini_get('upload_max_filesize') . ' max).';
     }
     if ($err !== UPLOAD_ERR_OK) {
         return 'Upload failed (PHP error ' . (int)$err . ').';

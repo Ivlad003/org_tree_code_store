@@ -16,7 +16,16 @@ if ($id < 1 || !is_file($file)) {
     exit('Not found');
 }
 
+// A replaced photo keeps the same URL, so without a validator the browser served
+// the old image for the full max-age — the admin saw the new one (their preview
+// cache-busts) while everyone else saw the old.
+$etag = '"' . filemtime($file) . '-' . filesize($file) . '"';
+header('ETag: ' . $etag);
+header('Cache-Control: private, max-age=300, must-revalidate');
+if (trim((string)($_SERVER['HTTP_IF_NONE_MATCH'] ?? '')) === $etag) {
+    http_response_code(304);
+    exit;
+}
 header('Content-Type: image/webp');
 header('Content-Length: ' . filesize($file));
-header('Cache-Control: private, max-age=300');
 readfile($file);
