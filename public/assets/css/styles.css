@@ -467,6 +467,24 @@ html, body {
 
 .node-li:hover { color: #0a66c2; }
 
+/* Details button on a card that has reports — the whole card is an expand overlay,
+   so this is the only route to a manager's bio and LinkedIn. */
+.node-info-btn {
+    flex-shrink: 0;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px; font-style: italic; font-weight: 600;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid var(--border, rgba(128,128,128,.35));
+    border-radius: 50%;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+}
+.node-info-btn:hover,
+.node-info-btn:focus-visible { color: var(--accent); border-color: var(--accent); }
+
 /* ── Connector lines ─── */
 .link { stroke: var(--link-color) !important; stroke-width: 1.5 !important; }
 

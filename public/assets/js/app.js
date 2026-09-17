@@ -28,10 +28,17 @@ function deptColor(name) {
 }
 
 // ── Security helpers ────────────────────────────────────────────────────────
+// innerHTML escapes & < > but NOT quotes, and every caller here interpolates into
+// a double-quoted HTML attribute (alt=, src=, style=, data-id=). A name containing
+// a double quote closed the attribute and injected onload= — stored XSS that ran
+// for every viewer. Escape the quotes explicitly.
 function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function isValidUrl(str) {
@@ -113,8 +120,9 @@ function getFilteredData() {
     let data = allData;
 
     if (activeDept !== 'all') {
+        const wanted = activeDept.startsWith('d:') ? activeDept.slice(2) : activeDept;
         const deptIds = new Set(
-            data.filter(r => (r.department_name || '').toLowerCase().trim() === activeDept).map(r => r.id)
+            data.filter(r => (r.department_name || '').toLowerCase().trim() === wanted).map(r => r.id)
         );
         const keep = new Set(deptIds);
         // Walk iteratively with a seen-set: a cycle in the data used to recurse
@@ -175,6 +183,9 @@ function buildChildrenMap(data) {
 // ── Chart render ──────────────────────────────────────────────────────────────
 function renderChart(data) {
     const noResults = document.getElementById('no-results');
+    // The error banner below used to replace the container's innerHTML wholesale,
+    // taking #no-results with it — after which every filter threw on a null.
+    if (!noResults) { location.reload(); return; }
 
     if (data.length === 0) {
         noResults.classList.add('visible');
@@ -266,6 +277,15 @@ function renderChart(data) {
                     ? `<div class="node-expand-icon">${isOpen ? '▾' : '▸'}</div>`
                     : '';
 
+                // A parent card's whole surface is an expand/collapse overlay, so a
+                // manager's bio and LinkedIn had no route at all. This button sits
+                // above the overlay (z-index) and opens the same modal leaves get.
+                const infoHTML = (!isGroup && hasKids)
+                    ? `<button class="node-info-btn" data-info="${escapeHtml(p.id || '')}"
+                               style="position:relative;z-index:10"
+                               title="Details" aria-label="Details">i</button>`
+                    : '';
+
                 const cardClass = [
                     'node-card',
                     isGroup            ? 'is-group'     : '',
@@ -273,7 +293,6 @@ function renderChart(data) {
                     hasKids && !isOpen ? 'collapsed'    : '',
                 ].filter(Boolean).join(' ');
 
-                //${liHTML}
                 return `
                     <div class="${cardClass}" style="--dept-color:${color}" data-id="${escapeHtml(p.id || '')}">
                         ${photoHTML}
@@ -281,6 +300,8 @@ function renderChart(data) {
                             <div class="node-name">${fullName}</div>
                             <div class="node-role">${role}</div>
                         </div>
+                        ${infoHTML}
+                        ${liHTML}
                         ${chevron}
                     </div>
                 `;
@@ -303,14 +324,36 @@ function renderChart(data) {
     // it — show what is wrong instead of nothing at all.
     try {
         chart.data(data).render();
+        document.getElementById('chart-error')?.remove();
     } catch (err) {
         console.error('Chart render failed:', err);
         chart = null;
-        document.getElementById('chart-container').innerHTML =
-            '<div class="state-msg"><span style="color:#e8315b">\u26a0</span>' +
-            '<span>The chart data is broken (' + escapeHtml(err.message) + '). ' +
-            'An admin needs to fix the tree structure in the admin panel.</span></div>';
+        // Append the banner instead of replacing the container: #no-results and the
+        // chart svg live in here too, and wiping them breaks every later interaction.
+        d3.select('#chart-container').selectAll('svg').remove();
+        document.getElementById('chart-error')?.remove();
+        const banner = document.createElement('div');
+        banner.id = 'chart-error';
+        banner.className = 'state-msg';
+        banner.innerHTML = '<span style="color:#e8315b">\u26a0</span><span></span>';
+        banner.lastElementChild.textContent =
+            'The chart data is broken (' + err.message + '). ' +
+            'An admin needs to fix the tree structure in the admin panel.';
+        document.getElementById('chart-container').appendChild(banner);
         return;
+    }
+
+    // One delegated listener for the parent-card details button. Delegated because
+    // d3-org-chart re-creates the card DOM on every render.
+    if (!renderChart._infoWired) {
+        document.getElementById('chart-container').addEventListener('click', (e) => {
+            const btn = e.target.closest('.node-info-btn');
+            if (!btn) return;
+            e.stopPropagation();          // don't let the overlay expand/collapse too
+            const person = allData.find(r => String(r.id) === btn.dataset.info);
+            if (person) openModal(person);
+        }, true);                          // capture: the overlay swallows the bubble
+        renderChart._infoWired = true;
     }
 
     // Patch layoutBindings once after first render to move node-button-g to
@@ -341,14 +384,16 @@ function buildDeptFilters() {
     depts.forEach(dept => {
         const btn         = document.createElement('button');
         btn.className     = 'dept-option';
-        btn.dataset.dept  = dept.toLowerCase();
+        // Namespaced so a department actually named "All" cannot collide with the
+        // static reset option (which would leave the label claiming no filter).
+        btn.dataset.dept  = 'd:' + dept.toLowerCase();
         btn.dataset.label = dept;
         btn.setAttribute('role', 'option');
         const color       = deptColor(dept);
         btn.innerHTML     = `<span class="dot" style="background:${color}"></span>${escapeHtml(dept)}`;
         btn.addEventListener('click', () => {
             chart = null; // collapse tree before re-rendering
-            setDept(dept.toLowerCase());
+            setDept('d:' + dept.toLowerCase());
             dropdown.classList.remove('open');
             trigger.setAttribute('aria-expanded', 'false');
         });
