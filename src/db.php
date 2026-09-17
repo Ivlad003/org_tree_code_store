@@ -223,13 +223,19 @@ function sanitizeUrl(string $url): ?string {
 function inWriteTransaction(callable $fn) {
     $pdo = db();
     if ($pdo->inTransaction()) return $fn($pdo);   // already inside one; don't nest
+
+    // BEGIN IMMEDIATE has to go through exec() — PDO's beginTransaction() issues a
+    // deferred BEGIN, which takes the write lock late and leaves the race open. But
+    // PDO then does not know a transaction is open (PHP 8.3 reports inTransaction()
+    // false; 8.5 reports true), so commit()/rollBack() throw "no active transaction".
+    // Drive the whole thing with exec() and track the state here instead.
     $pdo->exec('BEGIN IMMEDIATE');
     try {
         $result = $fn($pdo);
-        $pdo->commit();
+        $pdo->exec('COMMIT');
         return $result;
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        try { $pdo->exec('ROLLBACK'); } catch (Throwable $ignored) {}
         throw $e;
     }
 }
