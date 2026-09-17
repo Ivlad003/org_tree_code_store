@@ -43,8 +43,20 @@ if [ ! -f data/db.sqlite ]; then
         chown www-data:www-data data/org_struct_code_store.csv
     fi
     echo "first boot: seeding the org chart from the CSV (downloading avatars)"
-    su -s /bin/sh -c 'php seed.php' www-data \
-        || echo "WARNING: seed failed — the chart will be empty until it is seeded by hand"
+    # A crash mid-seed leaves a half-written db.sqlite, and the guard above then skips
+    # seeding forever — an empty chart that never repairs itself. Drop the file so the
+    # next boot retries instead.
+    if su -s /bin/sh -c 'php seed.php' www-data; then
+        :
+    else
+        echo "WARNING: seed failed — removing the partial database so the next boot retries"
+        rm -f data/db.sqlite data/db.sqlite-wal data/db.sqlite-shm
+    fi
+    # seed.php can also die mid-transaction without a non-zero exit, so verify.
+    if [ -f data/db.sqlite ] && [ "$(su -s /bin/sh -c 'php -r "require \"src/db.php\"; echo (int)db()->query(\"SELECT COUNT(*) FROM employees\")->fetchColumn();"' www-data)" = "0" ]; then
+        echo "WARNING: seed produced an empty database — removing it so the next boot retries"
+        rm -f data/db.sqlite data/db.sqlite-wal data/db.sqlite-shm
+    fi
 fi
 
 exec "$@"

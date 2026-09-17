@@ -11,6 +11,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     exit('POST only');
 }
+// An upload over post_max_size arrives with $_POST empty — including the CSRF
+// token — so without this the admin gets "CSRF token mismatch" for a size problem.
+$postMax = (int)ini_get('post_max_size') * 1024 * 1024;
+if (empty($_POST) && ($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    startSession();
+    $_SESSION['flash'] = ['type' => 'err', 'message' => 'That file is too large to upload (server limit '
+        . ini_get('post_max_size') . ').'];
+    header('Location: admin.php');
+    exit;
+}
 checkCsrf();
 
 $id = (int)($_POST['employee_id'] ?? 0);

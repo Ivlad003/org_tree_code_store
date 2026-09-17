@@ -169,7 +169,10 @@ $viewer = viewerEmail();
     // JSON_HEX_TAG is load-bearing: without it a name containing a literal
     // closing script tag ends this block early — stored XSS for every viewer,
     // and the chart never renders. (Hence no such tag in this comment either.)
-    window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+    // JSON_INVALID_UTF8_SUBSTITUTE is the other half: one Latin-1 byte in a name
+    // (Excel export, restored backup) makes json_encode return false, which emits
+    // `= ;` — a syntax error that blanks the chart for everyone.
+    window.ORG_DATA = <?= json_encode($tree, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]' ?>;
 </script>
 <!-- Pinned to exact versions with SRI. @3 floated: a new 3.x would ship silently,
      and with SRI a floating tag would break the chart the day it moved. -->

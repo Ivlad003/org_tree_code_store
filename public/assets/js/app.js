@@ -117,11 +117,18 @@ function getFilteredData() {
             data.filter(r => (r.department_name || '').toLowerCase().trim() === activeDept).map(r => r.id)
         );
         const keep = new Set(deptIds);
+        // Walk iteratively with a seen-set: a cycle in the data used to recurse
+        // until the stack blew, on every keystroke in the search box.
         function addParents(id) {
-            const node = data.find(r => r.id === id);
-            if (!node || !node.parentId) return;
-            keep.add(node.parentId);
-            addParents(node.parentId);
+            for (let cur = id; cur; ) {
+                const node = data.find(r => r.id === cur);
+                if (!node || !node.parentId || keep.has(node.parentId)) {
+                    if (node?.parentId) keep.add(node.parentId);
+                    return;
+                }
+                keep.add(node.parentId);
+                cur = node.parentId;
+            }
         }
         deptIds.forEach(addParents);
         data = data.filter(r => keep.has(r.id));
@@ -136,10 +143,15 @@ function getFilteredData() {
             }).map(r => r.id)
         );
         function addParents(id) {
-            const node = data.find(r => r.id === id);
-            if (!node || !node.parentId) return;
-            matched.add(node.parentId);
-            addParents(node.parentId);
+            for (let cur = id; cur; ) {
+                const node = data.find(r => r.id === cur);
+                if (!node || !node.parentId || matched.has(node.parentId)) {
+                    if (node?.parentId) matched.add(node.parentId);
+                    return;
+                }
+                matched.add(node.parentId);
+                cur = node.parentId;
+            }
         }
         [...matched].forEach(addParents);
         data = data.filter(r => matched.has(r.id));
@@ -355,7 +367,9 @@ function setDept(dept) {
     // Update trigger label + dot
     const triggerLabel = document.getElementById('dept-trigger-label');
     const triggerDot   = document.getElementById('dept-trigger-dot');
-    const activeOption = document.querySelector(`.dept-option[data-dept="${dept}"]`);
+    // CSS.escape: a role like `Dev "Lead"` otherwise builds an invalid selector,
+    // throws, and the filter silently does nothing.
+    const activeOption = document.querySelector(`.dept-option[data-dept="${CSS.escape(dept)}"]`);
     if (activeOption) {
         triggerLabel.textContent        = activeOption.dataset.label || dept;
         const dot                       = activeOption.querySelector('.dot');
