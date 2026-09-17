@@ -38,6 +38,10 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
     $pdo->exec('PRAGMA foreign_keys = ON');
+    // Without a busy timeout a second concurrent writer fails outright instead of
+    // waiting. WAL lets the 60 chart readers read while an admin writes.
+    $pdo->exec('PRAGMA busy_timeout = 5000');
+    $pdo->exec('PRAGMA journal_mode = WAL');
     migrate($pdo);
     return $pdo;
 }
@@ -69,12 +73,23 @@ function migrate(PDO $pdo): void {
     // Seed AUTOINCREMENT for employees so the first inserted row gets id 10000.
     // sqlite_sequence has no uniqueness constraint, so always normalize: collapse any
     // existing rows for 'employees' down to one with seq = max(observed, offset-1).
+    // Read first and only write when something is actually wrong: this runs on every
+    // db() call, so an unconditional DELETE+INSERT made every chart view a writer —
+    // contending for the write lock, and fataling outright on a read-only DB file.
     $floor = EMPLOYEE_ID_OFFSET - 1;
-    $current = (int)$pdo->query("SELECT COALESCE(MAX(seq), 0) FROM sqlite_sequence WHERE name = 'employees'")->fetchColumn();
-    $target = max($current, $floor);
-    $pdo->exec("DELETE FROM sqlite_sequence WHERE name = 'employees'");
-    $stmt = $pdo->prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('employees', ?)");
-    $stmt->execute([$target]);
+    $rows = $pdo->query("SELECT COUNT(*) AS n, COALESCE(MAX(seq), 0) AS hi FROM sqlite_sequence WHERE name = 'employees'")->fetch();
+    $count = (int)$rows['n'];
+    $hi    = (int)$rows['hi'];
+
+    if ($count === 0) {
+        $pdo->prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('employees', ?)")->execute([$floor]);
+    } elseif ($count > 1 || $hi < $floor) {
+        // >1 row is possible — sqlite_sequence has no unique constraint, and
+        // AUTOINCREMENT then reads only the first, which can hand out stale ids.
+        $target = max($hi, $floor);
+        $pdo->exec("DELETE FROM sqlite_sequence WHERE name = 'employees'");
+        $pdo->prepare("INSERT INTO sqlite_sequence (name, seq) VALUES ('employees', ?)")->execute([$target]);
+    }
 }
 
 // ── Tree query: merge departments + employees into the flat shape app.js expects ─
@@ -201,6 +216,24 @@ function sanitizeUrl(string $url): ?string {
     return $url;
 }
 
+// Runs $fn holding the write lock from the first statement. Validation that reads
+// the tree and a write that depends on it must sit inside the SAME transaction:
+// otherwise two admins both validate against the pre-move tree and both commit,
+// producing a cycle or a dangling parent — either of which blanks the chart.
+function inWriteTransaction(callable $fn) {
+    $pdo = db();
+    if ($pdo->inTransaction()) return $fn($pdo);   // already inside one; don't nest
+    $pdo->exec('BEGIN IMMEDIATE');
+    try {
+        $result = $fn($pdo);
+        $pdo->commit();
+        return $result;
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
 function requireNonEmpty(string $value, string $label): string {
     $value = trim($value);
     if ($value === '') throw new ValidationError($label . ' is required.');
@@ -221,39 +254,35 @@ function getDepartment(int $id): ?array {
 }
 
 function saveDepartment(array $data): int {
-    $pdo = db();
     $selfId    = !empty($data['id']) ? (int)$data['id'] : null;
-    $parentId  = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
-    $parentId  = validateParent($parentId, $selfId);
+    $rawParent = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
     $name      = requireNonEmpty((string)($data['name'] ?? ''), 'Department name');
     $sortOrder = (int)($data['sort_order'] ?? 0);
 
-    if (!empty($data['id'])) {
-        $stmt = $pdo->prepare("UPDATE departments SET parent_id = ?, name = ?, sort_order = ? WHERE id = ?");
-        $stmt->execute([$parentId, $name, $sortOrder, (int)$data['id']]);
-        return (int)$data['id'];
-    }
-    $stmt = $pdo->prepare("INSERT INTO departments (parent_id, name, sort_order) VALUES (?, ?, ?)");
-    $stmt->execute([$parentId, $name, $sortOrder]);
-    return (int)$pdo->lastInsertId();
+    return inWriteTransaction(function (PDO $pdo) use ($selfId, $rawParent, $name, $sortOrder) {
+        $parentId = validateParent($rawParent, $selfId);
+        if ($selfId !== null) {
+            $stmt = $pdo->prepare("UPDATE departments SET parent_id = ?, name = ?, sort_order = ? WHERE id = ?");
+            $stmt->execute([$parentId, $name, $sortOrder, $selfId]);
+            return $selfId;
+        }
+        $stmt = $pdo->prepare("INSERT INTO departments (parent_id, name, sort_order) VALUES (?, ?, ?)");
+        $stmt->execute([$parentId, $name, $sortOrder]);
+        return (int)$pdo->lastInsertId();
+    });
 }
 
 function deleteDepartment(int $id): void {
-    $pdo = db();
     // Re-parenting children to NULL turned every one of them into a root and blanked
     // the chart. Promote them to this node's parent instead, so the tree stays whole.
-    $grandparent = detachTarget($id, 'departments');
-
-    $pdo->beginTransaction();
-    try {
+    // detachTarget() must run INSIDE the transaction: read outside it, another admin
+    // can delete the grandparent in the gap and the children point at a missing row.
+    inWriteTransaction(function (PDO $pdo) use ($id) {
+        $grandparent = detachTarget($id, 'departments');
         $pdo->prepare("UPDATE employees SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
         $pdo->prepare("UPDATE departments SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
         $pdo->prepare("DELETE FROM departments WHERE id = ?")->execute([$id]);
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
-    }
+    });
 }
 
 // Where a deleted node's children should go: its own parent. Deleting the root is
@@ -298,63 +327,61 @@ function getEmployee(int $id): ?array {
 }
 
 function saveEmployee(array $data): int {
-    $pdo = db();
     $selfId    = !empty($data['id']) ? (int)$data['id'] : null;
-    $parentId  = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
-    $parentId  = validateParent($parentId, $selfId);
+    $rawParent = ($data['parent_id'] ?? '') !== '' && $data['parent_id'] !== null ? (int)$data['parent_id'] : null;
     $firstName = requireNonEmpty((string)($data['first_name'] ?? ''), 'First name');
-    $payload = [
-        $parentId,
+    // Every field gets a string cast: a crafted POST can send last_name[]=x, and
+    // trim() on an array is a fatal TypeError.
+    $fields = [
         $firstName,
-        trim($data['last_name'] ?? '') ?: null,
-        trim($data['department_name'] ?? '') ?: null,
+        trim((string)($data['last_name'] ?? '')) ?: null,
+        trim((string)($data['department_name'] ?? '')) ?: null,
         sanitizeUrl((string)($data['linkedin_url'] ?? '')),
-        trim($data['description'] ?? '') ?: null,
+        trim((string)($data['description'] ?? '')) ?: null,
     ];
 
-    if (!empty($data['id'])) {
+    return inWriteTransaction(function (PDO $pdo) use ($selfId, $rawParent, $fields) {
+        $payload = array_merge([validateParent($rawParent, $selfId)], $fields);
+        if ($selfId !== null) {
+            $stmt = $pdo->prepare("
+                UPDATE employees
+                SET parent_id = ?, first_name = ?, last_name = ?, department_name = ?,
+                    linkedin_url = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ");
+            $payload[] = $selfId;
+            $stmt->execute($payload);
+            return $selfId;
+        }
         $stmt = $pdo->prepare("
-            UPDATE employees
-            SET parent_id = ?, first_name = ?, last_name = ?, department_name = ?,
-                linkedin_url = ?, description = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
+            INSERT INTO employees (parent_id, first_name, last_name, department_name, linkedin_url, description)
+            VALUES (?, ?, ?, ?, ?, ?)
         ");
-        $payload[] = (int)$data['id'];
         $stmt->execute($payload);
-        return (int)$data['id'];
-    }
-    $stmt = $pdo->prepare("
-        INSERT INTO employees (parent_id, first_name, last_name, department_name, linkedin_url, description)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->execute($payload);
-    return (int)$pdo->lastInsertId();
+        return (int)$pdo->lastInsertId();
+    });
 }
 
 function deleteEmployee(int $id): void {
-    $pdo = db();
-    $grandparent = detachTarget($id, 'employees');
-
-    $pdo->beginTransaction();
-    try {
+    $avatar = inWriteTransaction(function (PDO $pdo) use ($id) {
+        $grandparent = detachTarget($id, 'employees');
         // Promote reports to this employee's own manager, not to root (see deleteDepartment).
         $pdo->prepare("UPDATE employees SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
         $pdo->prepare("UPDATE departments SET parent_id = ? WHERE parent_id = ?")->execute([$grandparent, $id]);
 
-        // Drop avatar file from disk
         $stmt = $pdo->prepare("SELECT avatar_path FROM employees WHERE id = ?");
         $stmt->execute([$id]);
-        $avatar = $stmt->fetchColumn();
-        if ($avatar) {
-            $disk = projectRoot() . '/' . ltrim((string)$avatar, '/');
-            if (is_file($disk)) @unlink($disk);
-        }
+        $path = $stmt->fetchColumn();
 
         $pdo->prepare("DELETE FROM employees WHERE id = ?")->execute([$id]);
-        $pdo->commit();
-    } catch (Throwable $e) {
-        $pdo->rollBack();
-        throw $e;
+        return $path;
+    });
+
+    // unlink() cannot be rolled back. Deleting the file inside the transaction meant
+    // a later failure restored the row with its photo already gone for good.
+    if ($avatar) {
+        $disk = projectRoot() . '/' . ltrim((string)$avatar, '/');
+        if (is_file($disk)) @unlink($disk);
     }
 }
 
