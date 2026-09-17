@@ -85,8 +85,11 @@ function initials(first, last) {
     return ((first?.[0] || '') + (last?.[0] || '')).toUpperCase() || '?';
 }
 
-// A "group node" is a category placeholder (no last_name, name matches dept list)
+// A "group node" is a department, not a person. The server says which (type=dept),
+// so a newly created department styles correctly instead of rendering as a person.
+// The name-list fallback only covers data from before `type` existed.
 function isGroupNode(person) {
+    if (person.type) return person.type === 'dept';
     const groupNames = ['pms', 'qa', 'developers', 'developer', 'hr', 'growth', 'bdr', 'founders', 'code.store'];
     const name = (person.first_name || '').toLowerCase().trim();
     return groupNames.includes(name) && !person.last_name;
@@ -283,7 +286,20 @@ function renderChart(data) {
             });
     }
 
-    chart.data(data).render();
+    // d3-org-chart throws ("multiple roots" / "no root") on malformed data and leaves
+    // a blank page. The admin side now prevents that, but a legacy DB can still hold
+    // it — show what is wrong instead of nothing at all.
+    try {
+        chart.data(data).render();
+    } catch (err) {
+        console.error('Chart render failed:', err);
+        chart = null;
+        document.getElementById('chart-container').innerHTML =
+            '<div class="state-msg"><span style="color:#e8315b">\u26a0</span>' +
+            '<span>The chart data is broken (' + escapeHtml(err.message) + '). ' +
+            'An admin needs to fix the tree structure in the admin panel.</span></div>';
+        return;
+    }
 
     // Patch layoutBindings once after first render to move node-button-g to
     // card origin (0,0). This must run after render() because the chart state
